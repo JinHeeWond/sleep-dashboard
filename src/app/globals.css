@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f5ef;
+  --foreground: #1a1a2e;
+  --card: #ffffff;
+  --card-foreground: #1a1a2e;
+  --muted: #efece4;
+  --muted-foreground: #6b6b7c;
+  --border: #e7e3d6;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --accent: #f4e4bc;
+  --accent-foreground: #1a1a2e;
+  --supine: #5BBF72;
+  --lateral-l: #F4A742;
+  --lateral-r: #E07BB5;
+  --prone: #5B8EBF;
+  --unknown: #AAAAAA;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-supine: var(--supine);
+  --color-lateral-l: var(--lateral-l);
+  --color-lateral-r: var(--lateral-r);
+  --color-prone: var(--prone);
+  --color-unknown: var(--unknown);
+  --font-sans: var(--font-pretendard);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-feature-settings: "ss01", "cv11";
 }
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
