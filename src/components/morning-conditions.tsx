@@ -97,7 +97,7 @@ export function MorningConditions({
           </div>
           <div className="flex items-center gap-1.5">
             {[1, 2, 3, 4, 5].map((n) => {
-              const active = n <= refresh;
+              const active = n === refresh;
               return (
                 <button
                   type="button"
