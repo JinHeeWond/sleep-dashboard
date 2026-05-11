@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   Camera,
@@ -10,11 +10,12 @@ import {
   PlayCircle,
 } from "lucide-react";
 import { Badge, Button, Card, CardTitle } from "@/components/ui";
-import { POSTURE_COLOR, type Posture } from "@/lib/types";
+import { POSTURE_COLOR, type CaptureType, type Posture, type PostureLog } from "@/lib/types";
 import { POSTURE_LABEL } from "@/lib/i18n";
 import { useLang, type Lang } from "@/lib/lang";
+import { createClient } from "@/lib/supabase/client";
 
-const POSTURES: Posture[] = ["Supine", "Lateral_L", "Lateral_R", "Prone"];
+const POLL_MS = 3000;
 
 function fmt(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -32,6 +33,7 @@ const COPY: Record<Lang, {
   elapsed: string;
   streamLabel: string;
   realtimeAnalyzing: string;
+  waitingForData: string;
   startToPreview: string;
   current: string;
   start: string;
@@ -39,7 +41,7 @@ const COPY: Record<Lang, {
   reset: string;
   regular: string;
   motion: string;
-  events: { hint: string; title: string; empty: string; regularBadge: string; motionBadge: string };
+  events: { hint: string; title: string; empty: string; waiting: string; regularBadge: string; motionBadge: string };
   options: {
     title: string;
     hint: string;
@@ -53,6 +55,7 @@ const COPY: Record<Lang, {
     elapsed: "경과 시간",
     streamLabel: "Azure Kinect Depth Stream",
     realtimeAnalyzing: "실시간 분석 중…",
+    waitingForData: "Kinect 데이터 수신 대기 중… (Windows 노트북에서 업로드가 시작되면 표시됩니다)",
     startToPreview: "기록을 시작하면 미리보기가 표시됩니다",
     current: "현재",
     start: "기록 시작",
@@ -60,7 +63,7 @@ const COPY: Record<Lang, {
     reset: "초기화",
     regular: "정기",
     motion: "움직임",
-    events: { hint: "실시간", title: "감지 이벤트", empty: "기록을 시작하면 이벤트가 여기 표시됩니다", regularBadge: "정기", motionBadge: "움직임" },
+    events: { hint: "실시간", title: "감지 이벤트", empty: "기록을 시작하면 이벤트가 여기 표시됩니다", waiting: "아직 Supabase에 새 행이 없습니다. Python 업로더를 확인하세요.", regularBadge: "정기", motionBadge: "움직임" },
     options: {
       title: "기록 옵션",
       hint: "설정",
@@ -78,6 +81,7 @@ const COPY: Record<Lang, {
     elapsed: "Elapsed",
     streamLabel: "Azure Kinect Depth Stream",
     realtimeAnalyzing: "Analyzing in real time…",
+    waitingForData: "Waiting for Kinect data… (rows will appear here once the Windows uploader starts)",
     startToPreview: "Start recording to see the preview",
     current: "Current",
     start: "Start recording",
@@ -85,7 +89,7 @@ const COPY: Record<Lang, {
     reset: "Reset",
     regular: "Regular",
     motion: "Motion",
-    events: { hint: "Live", title: "Detected events", empty: "Events will appear here once recording starts", regularBadge: "Regular", motionBadge: "Motion" },
+    events: { hint: "Live", title: "Detected events", empty: "Events will appear here once recording starts", waiting: "No new rows in Supabase yet. Check the Python uploader.", regularBadge: "Regular", motionBadge: "Motion" },
     options: {
       title: "Recording options",
       hint: "Settings",
@@ -98,50 +102,83 @@ const COPY: Record<Lang, {
   },
 };
 
-export function RecordController() {
+export function RecordController({ userId }: { userId: string }) {
   const { lang } = useLang();
   const t = COPY[lang];
   const countUnit = lang === "ko" ? "회" : "x";
 
   const [recording, setRecording] = useState(false);
+  const [startTs, setStartTs] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [posture, setPosture] = useState<Posture>("Supine");
+  const [posture, setPosture] = useState<Posture | null>(null);
   const [regularCount, setRegularCount] = useState(0);
   const [motionCount, setMotionCount] = useState(0);
   const [events, setEvents] = useState<
-    { time: string; kind: "regular" | "motion"; posture: Posture }[]
+    { time: string; kind: CaptureType; posture: Posture }[]
   >([]);
+  const lastSeenRef = useRef<number>(0);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || startTs === null) return;
     const tick = setInterval(() => setElapsed((s) => s + 1), 1000);
-    const sample = setInterval(() => {
-      const isMotion = Math.random() > 0.7;
-      const next = POSTURES[Math.floor(Math.random() * POSTURES.length)];
-      setPosture(next);
-      const time = new Date().toLocaleTimeString(
-        lang === "ko" ? "ko-KR" : "en-US",
-        { hour: "2-digit", minute: "2-digit", second: "2-digit" }
-      );
-      if (isMotion) setMotionCount((c) => c + 1);
-      else setRegularCount((c) => c + 1);
-      setEvents((evs) => {
-        const kind: "motion" | "regular" = isMotion ? "motion" : "regular";
-        return [{ time, kind, posture: next }, ...evs].slice(0, 12);
-      });
-    }, 2200);
+
+    const sb = createClient();
+    let canceled = false;
+
+    async function poll() {
+      const cursor = lastSeenRef.current;
+      const { data, error } = await sb
+        .from("posture_log")
+        .select("timestamp,posture,capture_type")
+        .eq("user_id", userId)
+        .gt("timestamp", cursor)
+        .order("timestamp", { ascending: true })
+        .limit(200);
+
+      if (canceled || error || !data || data.length === 0) return;
+
+      for (const row of data as Pick<PostureLog, "timestamp" | "posture" | "capture_type">[]) {
+        if (row.timestamp > lastSeenRef.current) {
+          lastSeenRef.current = row.timestamp;
+        }
+        setPosture(row.posture);
+        if (row.capture_type === "motion") setMotionCount((c) => c + 1);
+        else setRegularCount((c) => c + 1);
+        const time = new Date(row.timestamp * 1000).toLocaleTimeString(
+          lang === "ko" ? "ko-KR" : "en-US",
+          { hour: "2-digit", minute: "2-digit", second: "2-digit" }
+        );
+        setEvents((evs) =>
+          [{ time, kind: row.capture_type, posture: row.posture }, ...evs].slice(0, 12)
+        );
+      }
+    }
+
+    poll();
+    const sample = setInterval(poll, POLL_MS);
+
     return () => {
+      canceled = true;
       clearInterval(tick);
       clearInterval(sample);
     };
-  }, [recording, lang]);
+  }, [recording, startTs, userId, lang]);
+
+  const start = () => {
+    lastSeenRef.current = Math.floor(Date.now() / 1000) - 1;
+    setStartTs(Math.floor(Date.now() / 1000));
+    setRecording(true);
+  };
 
   const reset = () => {
     setRecording(false);
+    setStartTs(null);
     setElapsed(0);
     setRegularCount(0);
     setMotionCount(0);
     setEvents([]);
+    setPosture(null);
+    lastSeenRef.current = 0;
   };
 
   return (
@@ -189,10 +226,14 @@ export function RecordController() {
               {t.streamLabel}
             </div>
             <div className="text-[11px] text-muted-foreground mt-1">
-              {recording ? t.realtimeAnalyzing : t.startToPreview}
+              {recording
+                ? posture
+                  ? t.realtimeAnalyzing
+                  : t.waitingForData
+                : t.startToPreview}
             </div>
           </div>
-          {recording && (
+          {recording && posture && (
             <div
               className="absolute top-4 left-4 px-3 py-1.5 rounded-full text-xs font-semibold text-white backdrop-blur shadow-lg"
               style={{
@@ -207,7 +248,7 @@ export function RecordController() {
 
         <div className="flex items-center gap-3">
           {!recording ? (
-            <Button size="lg" onClick={() => setRecording(true)}>
+            <Button size="lg" onClick={start}>
               <PlayCircle className="size-5" />
               {t.start}
             </Button>
@@ -237,7 +278,7 @@ export function RecordController() {
         <CardTitle hint={t.events.hint}>{t.events.title}</CardTitle>
         {events.length === 0 ? (
           <div className="text-sm text-muted-foreground py-12 text-center">
-            {t.events.empty}
+            {recording ? t.events.waiting : t.events.empty}
           </div>
         ) : (
           <ul className="divide-y divide-border -mx-2">

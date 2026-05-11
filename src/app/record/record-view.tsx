@@ -17,13 +17,13 @@ const COPY: Record<Lang, { eyebrow: string; title: string; description: string }
   },
 };
 
-export function RecordView() {
+export function RecordView({ userId }: { userId: string }) {
   const { lang } = useLang();
   const t = COPY[lang];
   return (
     <>
       <PageHeader eyebrow={t.eyebrow} title={t.title} description={t.description} />
-      <RecordController />
+      <RecordController userId={userId} />
     </>
   );
 }
