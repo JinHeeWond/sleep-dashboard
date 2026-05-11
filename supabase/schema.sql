@@ -1,78 +1,79 @@
 -- ===========================================================================
 -- SleepLab Schema · Supabase
+-- 백엔드 레포 (HCI_Project_SleepPostureAnalysis) 와 동일한 테이블명 사용.
+-- 차이점: 멀티 유저 지원을 위해 user_id 컬럼 + (user_id, date) UNIQUE 추가.
+--
 -- 사용법: Supabase 대시보드 → SQL Editor → New Query → 이 파일 전체 붙여넣고 RUN
+-- ⚠️ 기존 posture_logs, sleep_sessions 테이블이 있다면 DROP 됩니다.
 -- ===========================================================================
 
--- 1) 자세 로그 (Python/Kinect가 매분 + 움직임마다 INSERT)
---    파이썬의 posture_log CSV 컬럼과 1:1 매핑
-create table if not exists posture_logs (
+-- 0) 구버전 테이블 정리
+drop table if exists posture_logs cascade;
+drop table if exists sleep_sessions cascade;
+
+
+-- 1) 자세 로그 (Kinect/Python이 매분 + 움직임마다 INSERT)
+create table if not exists posture_log (
   id            bigserial primary key,
-  user_id       text default 'demo',                       -- 추후 auth 붙이면 uuid로
-  timestamp     bigint not null,                            -- unix seconds (CSV의 timestamp)
-  datetime      timestamptz not null,                       -- "YYYY-MM-DD HH:MM:SS" 변환 후
+  user_id       text not null,
+  timestamp     bigint not null,                          -- unix seconds
+  datetime      timestamptz not null,
   posture       text not null check (posture in
                   ('Supine','Prone','Lateral_L','Lateral_R','Unknown')),
-  angle         numeric(5,2) not null default 0,
+  angle         float not null default 0,
   capture_type  text not null check (capture_type in ('regular','motion')),
-  image_path    text
+  image_path    text,
+  created_at    timestamptz not null default now()
 );
-create index if not exists posture_logs_dt_idx on posture_logs (datetime desc);
-create index if not exists posture_logs_user_dt_idx on posture_logs (user_id, datetime desc);
+create index if not exists posture_log_user_dt_idx on posture_log (user_id, datetime desc);
+create index if not exists posture_log_posture_idx on posture_log (posture);
 
 
--- 2) 하루치 요약 (대시보드/이력에서 쓰는 카드)
---    Python에서 잠 끝난 뒤 한 번만 upsert하거나, 트리거/뷰로 자동 집계 가능
-create table if not exists sleep_sessions (
-  id              bigserial primary key,
-  user_id         text default 'demo',
-  date            date not null,                            -- 기상일 기준 (YYYY-MM-DD)
-  start_time      timestamptz not null,
-  end_time        timestamptz not null,
-  duration_min    int not null,
-  score           int not null check (score between 0 and 100),
-  motion_count    int not null default 0,
-  regular_count   int not null default 0,
-  timelapse_url   text,
-  unique (user_id, date)
-);
-create index if not exists sleep_sessions_user_date_idx on sleep_sessions (user_id, date desc);
-
-
--- 3) 기상 컨디션 (대시보드에서 직접 입력)
+-- 2) 아침 컨디션 (기상 후 사용자가 직접 입력)
 create table if not exists morning_conditions (
   id              bigserial primary key,
-  user_id         text default 'demo',
+  user_id         text not null,
   date            date not null,
-  refreshment     int not null check (refreshment between 1 and 5),
+  refreshment     int check (refreshment between 1 and 5),
   pain_neck       boolean not null default false,
-  pain_back       boolean not null default false,
   pain_shoulder   boolean not null default false,
-  notes           text,
+  pain_back       boolean not null default false,
+  memo            text,
   created_at      timestamptz not null default now(),
   unique (user_id, date)
 );
+create index if not exists morning_conditions_user_date_idx on morning_conditions (user_id, date desc);
+
+
+-- 3) Storage 버킷: sleep-images (Kinect 이미지 업로드용)
+insert into storage.buckets (id, name, public)
+values ('sleep-images', 'sleep-images', true)
+on conflict (id) do nothing;
+
+-- Storage 정책: 공개 읽기
+drop policy if exists "Public read sleep-images" on storage.objects;
+create policy "Public read sleep-images"
+  on storage.objects for select
+  using (bucket_id = 'sleep-images');
+
+-- Storage 정책: anon key로 업로드 허용 (Kinect 사이드 호환)
+drop policy if exists "Allow upload sleep-images" on storage.objects;
+create policy "Allow upload sleep-images"
+  on storage.objects for insert
+  with check (bucket_id = 'sleep-images');
 
 
 -- 4) RLS (Row Level Security)
 --    데모용으로 anon 키만 가지고도 읽기/쓰기 가능하게 열어둠.
---    실제 배포 시에는 auth.uid() = user_id 정책으로 잠가야 함.
-alter table posture_logs        enable row level security;
-alter table sleep_sessions      enable row level security;
+--    실제 배포 시에는 auth.uid()::text = user_id 정책으로 좁혀야 함.
+alter table posture_log         enable row level security;
 alter table morning_conditions  enable row level security;
 
-drop policy if exists "demo all access posture_logs"       on posture_logs;
-drop policy if exists "demo all access sleep_sessions"     on sleep_sessions;
+drop policy if exists "demo all access posture_log"        on posture_log;
 drop policy if exists "demo all access morning_conditions" on morning_conditions;
 
-create policy "demo all access posture_logs"
-  on posture_logs for all using (true) with check (true);
-
-create policy "demo all access sleep_sessions"
-  on sleep_sessions for all using (true) with check (true);
+create policy "demo all access posture_log"
+  on posture_log for all using (true) with check (true);
 
 create policy "demo all access morning_conditions"
   on morning_conditions for all using (true) with check (true);
-
-
--- 5) (선택) timelapse mp4 저장용 Storage 버킷
---    이건 SQL이 아니라 Storage 탭에서 "timelapses"라는 public 버킷을 만들면 됩니다.

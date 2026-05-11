@@ -1,17 +1,23 @@
 """
-Kinect 자세 분류 결과(CSV)를 Supabase에 업로드하는 헬퍼.
+Kinect 자세 분류 결과(CSV)를 Supabase의 posture_log 테이블에 업로드하는 헬퍼.
+
+⚠️ 이 스크립트는 dev/테스트 보조 도구입니다.
+   실제 운영용 코드는 백엔드 레포(HCI_Project_SleepPostureAnalysis)의
+   backend/utils/db.py 를 참고하세요.
 
 사용 시나리오 1: 잠 끝난 후 일괄 업로드
     python upload_to_supabase.py results/20260507_posture_log.csv
 
 사용 시나리오 2: 다른 노트북에서 실시간 업로드
-    from upload_to_supabase import upload_row, upload_session
+    from upload_to_supabase import upload_row
     upload_row(timestamp, posture, angle, capture_type, image_path)
 
 환경 변수:
     SUPABASE_URL       프로젝트 URL
-    SUPABASE_ANON_KEY  anon public key (대시보드와 같은 키)
-    SLEEP_USER_ID      식별자 (기본값 'demo')
+    SUPABASE_ANON_KEY  anon public key
+    SLEEP_USER_ID      ⚠️ 본인 Supabase Auth UUID
+                       (대시보드 → Authentication → Users → 본인 행 ID)
+                       이 값을 안 넣으면 dashboard에 데이터가 안 보입니다.
 """
 
 from __future__ import annotations
@@ -32,20 +38,26 @@ except ImportError:
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
-USER_ID      = os.environ.get("SLEEP_USER_ID", "demo")
+USER_ID      = os.environ.get("SLEEP_USER_ID", "")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     print("[!] 환경변수 SUPABASE_URL / SUPABASE_ANON_KEY 가 비어있습니다.")
     sys.exit(1)
+
+if not USER_ID:
+    print("[!] 환경변수 SLEEP_USER_ID 가 비어있습니다.")
+    print("    Supabase 대시보드 → Authentication → Users 에서 본인 UUID를 복사해")
+    print("    export SLEEP_USER_ID=<uuid> 로 설정하세요.")
+    sys.exit(1)
+
+
+TABLE = "posture_log"   # 백엔드 레포와 동일하게 단수형
 
 
 def _client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-# ---------------------------------------------------------------------------
-# 단일 행 업로드 (실시간 분류 루프에서 호출)
-# ---------------------------------------------------------------------------
 def upload_row(
     timestamp: int,
     posture: str,
@@ -54,7 +66,7 @@ def upload_row(
     image_path: str | None,
 ) -> None:
     iso = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
-    _client().table("posture_logs").insert({
+    _client().table(TABLE).insert({
         "user_id":      USER_ID,
         "timestamp":    int(timestamp),
         "datetime":     iso,
@@ -65,9 +77,6 @@ def upload_row(
     }).execute()
 
 
-# ---------------------------------------------------------------------------
-# CSV 일괄 업로드
-# ---------------------------------------------------------------------------
 def upload_csv(csv_path: Path) -> int:
     rows: list[dict] = []
     with csv_path.open() as f:
@@ -87,61 +96,16 @@ def upload_csv(csv_path: Path) -> int:
         print("[i] 빈 CSV — 업로드할 행 없음")
         return 0
 
-    # 1000개씩 끊어서 insert
     sb = _client()
     BATCH = 500
     total = 0
     for i in range(0, len(rows), BATCH):
         chunk = rows[i:i + BATCH]
-        sb.table("posture_logs").insert(chunk).execute()
+        sb.table(TABLE).insert(chunk).execute()
         total += len(chunk)
         print(f"  ↑ {total}/{len(rows)}")
 
     return total
-
-
-# ---------------------------------------------------------------------------
-# 세션 요약 업로드 (잠 끝난 후 한 번)
-# ---------------------------------------------------------------------------
-def upload_session(
-    date_str: str,                  # "YYYY-MM-DD"
-    start_ts: int,
-    end_ts: int,
-    score: int,
-    motion_count: int,
-    regular_count: int,
-    timelapse_url: str | None = None,
-) -> None:
-    payload = {
-        "user_id":       USER_ID,
-        "date":          date_str,
-        "start_time":    datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat(),
-        "end_time":      datetime.fromtimestamp(end_ts,   tz=timezone.utc).isoformat(),
-        "duration_min":  max(1, (end_ts - start_ts) // 60),
-        "score":         max(0, min(100, int(score))),
-        "motion_count":  int(motion_count),
-        "regular_count": int(regular_count),
-        "timelapse_url": timelapse_url,
-    }
-    _client().table("sleep_sessions").upsert(
-        payload, on_conflict="user_id,date"
-    ).execute()
-
-
-# ---------------------------------------------------------------------------
-# 점수 계산 (TS와 동일 공식)
-# ---------------------------------------------------------------------------
-def compute_score(postures: Iterable[str], motion_count: int) -> int:
-    counts = {"Supine": 0, "Lateral_L": 0, "Lateral_R": 0, "Prone": 0, "Unknown": 0}
-    total = 0
-    for p in postures:
-        counts[p] = counts.get(p, 0) + 1
-        total += 1
-    total = max(1, total)
-    good = (counts["Supine"] + counts["Lateral_L"] + counts["Lateral_R"]) / total
-    prone_ratio = counts["Prone"] / total
-    motion_penalty = min(motion_count / 30, 1) * 15
-    return max(0, min(100, round(good * 80 + (1 - prone_ratio) * 20 - motion_penalty)))
 
 
 if __name__ == "__main__":
@@ -155,17 +119,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     n = upload_csv(path)
-    print(f"[OK] {n}개 행 업로드 완료")
-
-    # 같은 CSV로 세션 요약도 같이 만들어 올리기
-    with path.open() as f:
-        rows = list(csv.DictReader(f))
-    if rows:
-        ts0 = int(float(rows[0]["timestamp"]))
-        ts1 = int(float(rows[-1]["timestamp"]))
-        date_str = datetime.fromtimestamp(ts0).strftime("%Y-%m-%d")
-        motion = sum(1 for r in rows if r["capture_type"] == "motion")
-        regular = sum(1 for r in rows if r["capture_type"] == "regular")
-        score = compute_score((r["posture"] for r in rows), motion)
-        upload_session(date_str, ts0, ts1, score, motion, regular)
-        print(f"[OK] {date_str} 세션 요약 업로드 (점수 {score})")
+    print(f"[OK] {n}개 행 업로드 완료 (user_id={USER_ID})")

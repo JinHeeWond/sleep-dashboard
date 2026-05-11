@@ -1,91 +1,142 @@
-// Single source of truth for fetching sleep data.
-// Tries Supabase first, falls back to mock generator. Swap is transparent
-// to UI components - once Kinect+Python pushes posture_logs to Supabase
-// the same components render real data.
+// Single source of truth for fetching sleep data from Supabase.
+// Returns empty results when no data exists - UI is responsible for
+// rendering empty state.
 
-import { getSupabase, isSupabaseConfigured } from "./supabase";
-import {
-  mockCondition,
-  mockHistory,
-  mockPostureLogs,
-  mockSession,
-  todayStr,
-} from "./mock-data";
-import type { MorningCondition, PostureLog, SleepSession } from "./types";
+import { createClient, isSupabaseConfigured } from "./supabase/server";
+import type {
+  MorningCondition,
+  PostureLog,
+  SleepSession,
+} from "./types";
 
-export async function fetchPostureLogs(date: string): Promise<PostureLog[]> {
-  const sb = getSupabase();
-  if (sb) {
-    const { data, error } = await sb
-      .from("posture_logs")
-      .select("*")
-      .gte("datetime", `${date} 00:00:00`)
-      .lte("datetime", `${date} 23:59:59`)
-      .order("timestamp", { ascending: true });
-    if (!error && data && data.length > 0) return data as PostureLog[];
-  }
-  return mockPostureLogs(date);
+const TABLE_POSTURE = "posture_log";
+const TABLE_CONDITION = "morning_conditions";
+
+export function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export async function fetchSession(date: string): Promise<SleepSession> {
-  const sb = getSupabase();
-  if (sb) {
-    const { data } = await sb
-      .from("sleep_sessions")
-      .select("*")
-      .eq("date", date)
-      .maybeSingle();
-    if (data) return data as SleepSession;
+function aggregateSession(date: string, logs: PostureLog[]): SleepSession {
+  if (logs.length === 0) {
+    const iso = new Date(`${date}T00:00:00`).toISOString();
+    return {
+      date,
+      start_time: iso,
+      end_time: iso,
+      duration_min: 0,
+      motion_count: 0,
+      regular_count: 0,
+    };
   }
-  return mockSession(date);
+  const first = logs[0];
+  const last = logs[logs.length - 1];
+  let motion = 0;
+  let regular = 0;
+  for (const l of logs) {
+    if (l.capture_type === "motion") motion += 1;
+    else regular += 1;
+  }
+  const start = new Date(first.timestamp * 1000);
+  const end = new Date(last.timestamp * 1000);
+  return {
+    date,
+    start_time: start.toISOString(),
+    end_time: end.toISOString(),
+    duration_min: Math.max(
+      0,
+      Math.round((end.getTime() - start.getTime()) / 60_000)
+    ),
+    motion_count: motion,
+    regular_count: regular,
+  };
 }
 
-export async function fetchHistory(days = 14): Promise<SleepSession[]> {
-  const sb = getSupabase();
-  if (sb) {
-    const { data } = await sb
-      .from("sleep_sessions")
-      .select("*")
-      .order("date", { ascending: false })
-      .limit(days);
-    if (data && data.length > 0) return (data as SleepSession[]).reverse();
-  }
-  return mockHistory(days);
+export async function fetchPostureLogs(
+  date: string,
+  userId: string
+): Promise<PostureLog[]> {
+  const sb = await createClient();
+  if (!sb) return [];
+  const { data } = await sb
+    .from(TABLE_POSTURE)
+    .select("*")
+    .eq("user_id", userId)
+    .gte("datetime", `${date} 00:00:00`)
+    .lte("datetime", `${date} 23:59:59`)
+    .order("timestamp", { ascending: true });
+  return (data as PostureLog[] | null) ?? [];
 }
 
-export async function fetchCondition(date: string): Promise<MorningCondition | null> {
-  const sb = getSupabase();
-  if (sb) {
-    const { data } = await sb
-      .from("morning_conditions")
-      .select("*")
-      .eq("date", date)
-      .maybeSingle();
-    if (data) return data as MorningCondition;
-  }
-  return mockCondition(date);
+export async function fetchSession(
+  date: string,
+  userId: string
+): Promise<SleepSession> {
+  const sb = await createClient();
+  if (!sb) return aggregateSession(date, []);
+  const { data } = await sb
+    .from(TABLE_POSTURE)
+    .select("timestamp,datetime,capture_type")
+    .eq("user_id", userId)
+    .gte("datetime", `${date} 00:00:00`)
+    .lte("datetime", `${date} 23:59:59`)
+    .order("timestamp", { ascending: true });
+  return aggregateSession(date, (data as PostureLog[] | null) ?? []);
 }
 
-export async function saveCondition(
-  c: MorningCondition
-): Promise<{ ok: boolean; via: "supabase" | "local"; error?: string }> {
-  const sb = getSupabase();
-  if (sb) {
-    const payload = { ...c, user_id: c.user_id ?? "demo" };
-    const { error } = await sb
-      .from("morning_conditions")
-      .upsert(payload, { onConflict: "user_id,date" });
-    if (error) {
-      console.error("[supabase] upsert failed:", error);
-      return { ok: false, via: "supabase", error: error.message };
+export async function fetchHistory(
+  userId: string,
+  days = 14
+): Promise<SleepSession[]> {
+  const sb = await createClient();
+  if (!sb) return [];
+
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  const startStr = start.toISOString().slice(0, 10);
+
+  const { data } = await sb
+    .from(TABLE_POSTURE)
+    .select("timestamp,datetime,capture_type")
+    .eq("user_id", userId)
+    .gte("datetime", `${startStr} 00:00:00`)
+    .order("timestamp", { ascending: true });
+
+  if (!data || data.length === 0) return [];
+
+  const byDate = new Map<string, PostureLog[]>();
+  for (const row of data as PostureLog[]) {
+    const day = row.datetime.slice(0, 10);
+    if (!byDate.has(day)) byDate.set(day, []);
+    byDate.get(day)!.push(row);
+  }
+
+  const sessions: SleepSession[] = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const day = d.toISOString().slice(0, 10);
+    const dayLogs = byDate.get(day);
+    if (dayLogs && dayLogs.length > 0) {
+      sessions.push(aggregateSession(day, dayLogs));
     }
-    return { ok: true, via: "supabase" };
   }
-  if (typeof window !== "undefined") {
-    localStorage.setItem(`condition:${c.date}`, JSON.stringify(c));
-  }
-  return { ok: true, via: "local" };
+  return sessions;
 }
 
-export { todayStr };
+export async function fetchMorningCondition(
+  date: string,
+  userId: string
+): Promise<MorningCondition | null> {
+  const sb = await createClient();
+  if (!sb) return null;
+  const { data } = await sb
+    .from(TABLE_CONDITION)
+    .select("*")
+    .eq("user_id", userId)
+    .eq("date", date)
+    .maybeSingle();
+  return (data as MorningCondition | null) ?? null;
+}
+
 export { isSupabaseConfigured };

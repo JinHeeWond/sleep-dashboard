@@ -1,4 +1,4 @@
-import type { MorningCondition, Posture, PostureLog, SleepSession } from "./types";
+import type { Posture, PostureLog, SleepSession } from "./types";
 
 const POSTURES: Posture[] = ["Supine", "Lateral_L", "Lateral_R", "Prone"];
 
@@ -112,17 +112,6 @@ export function summarizeLogs(logs: PostureLog[]) {
   return { counts, distribution, motion, regular, total };
 }
 
-// Sleep posture score: rewards stable posture, penalizes Prone and excessive turns
-export function calculateScore(logs: PostureLog[]): number {
-  const { counts, motion } = summarizeLogs(logs);
-  const total = logs.length || 1;
-  const goodRatio = (counts.Supine + counts.Lateral_L + counts.Lateral_R) / total;
-  const proneRatio = counts.Prone / total;
-  const motionPenalty = Math.min(motion / 30, 1) * 15;
-  const score = Math.round(goodRatio * 80 + (1 - proneRatio) * 20 - motionPenalty);
-  return Math.max(0, Math.min(100, score));
-}
-
 export function mockSession(dateStr: string): SleepSession {
   const logs = mockPostureLogs(dateStr);
   const { motion, regular } = summarizeLogs(logs);
@@ -135,10 +124,8 @@ export function mockSession(dateStr: string): SleepSession {
     duration_min: Math.round(
       (new Date(end).getTime() - new Date(start).getTime()) / 60_000
     ),
-    score: calculateScore(logs),
     motion_count: motion,
     regular_count: regular,
-    timelapse_url: null,
   };
 }
 
@@ -151,17 +138,6 @@ export function mockHistory(days = 14): SleepSession[] {
     sessions.push(mockSession(fmtDate(d)));
   }
   return sessions;
-}
-
-export function mockCondition(dateStr: string): MorningCondition {
-  const rnd = seedRandom(Number(dateStr.replace(/-/g, "")) + 7);
-  return {
-    date: dateStr,
-    refreshment: (Math.floor(rnd() * 5) + 1) as MorningCondition["refreshment"],
-    pain_neck: rnd() > 0.6,
-    pain_back: rnd() > 0.7,
-    pain_shoulder: rnd() > 0.5,
-  };
 }
 
 export function todayStr(): string {

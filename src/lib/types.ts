@@ -14,36 +14,32 @@ export interface PostureLog {
   image_path: string | null;
 }
 
-export interface MorningCondition {
-  id?: string;
-  user_id?: string;
-  date: string;                 // "YYYY-MM-DD"
-  refreshment: 1 | 2 | 3 | 4 | 5;
-  pain_neck: boolean;
-  pain_back: boolean;
-  pain_shoulder: boolean;
-  notes?: string;
-  created_at?: string;
-}
-
+// Derived view (not a DB table) — aggregated from posture_log on the fly.
 export interface SleepSession {
-  id?: string;
-  user_id?: string;
   date: string;                 // "YYYY-MM-DD"
   start_time: string;           // ISO
   end_time: string;             // ISO
   duration_min: number;
-  score: number;                // 0-100
-  timelapse_url?: string | null;
   motion_count: number;
   regular_count: number;
 }
 
+export interface MorningCondition {
+  id?: number;
+  user_id?: string;
+  date: string;                 // "YYYY-MM-DD"
+  refreshment: number | null;   // 1 (worst) ~ 5 (best)
+  pain_neck: boolean;
+  pain_shoulder: boolean;
+  pain_back: boolean;
+  memo?: string | null;
+}
+
 export const POSTURE_KO: Record<Posture, string> = {
-  Supine: "앙와위",
-  Prone: "복와위",
-  Lateral_L: "좌측와위",
-  Lateral_R: "우측와위",
+  Supine: "똑바로 (앙와위)",
+  Prone: "엎드려 (복와위)",
+  Lateral_L: "왼쪽 (좌측와위)",
+  Lateral_R: "오른쪽 (우측와위)",
   Unknown: "미분류",
 };
 

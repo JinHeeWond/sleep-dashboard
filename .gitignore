@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python (backend/)
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+backend/sleep_frames/
+backend/timelapse/

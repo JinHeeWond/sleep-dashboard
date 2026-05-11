@@ -44,7 +44,7 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
 
   return (
     <div className="space-y-3">
-      <div className="relative h-10 rounded-2xl overflow-hidden bg-muted">
+      <div className="relative h-12 rounded-full overflow-hidden bg-white/[0.05] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
         {segments.map((s, i) => {
           const left = ((s.start - start) / total) * 100;
           const width = Math.max(0.5, ((s.end - s.start) / total) * 100);
@@ -55,7 +55,8 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
               style={{
                 left: `${left}%`,
                 width: `${width}%`,
-                background: POSTURE_COLOR[s.posture],
+                background: `linear-gradient(180deg, ${POSTURE_COLOR[s.posture]} 0%, ${POSTURE_COLOR[s.posture]}cc 100%)`,
+                boxShadow: `0 0 12px ${POSTURE_COLOR[s.posture]}55`,
               }}
               title={`${POSTURE_KO[s.posture]} · ${new Date(
                 s.start * 1000
@@ -72,7 +73,7 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
           return (
             <div
               key={`m-${i}`}
-              className="absolute top-1/2 -translate-y-1/2 size-1.5 rounded-full bg-foreground ring-2 ring-background"
+              className="absolute top-1/2 -translate-y-1/2 size-2 rounded-full bg-accent ring-2 ring-background shadow-[0_0_8px_rgba(247,212,136,0.8)]"
               style={{ left: `calc(${left}% - 3px)` }}
               title={`움직임 감지 · ${new Date(
                 m.timestamp * 1000
