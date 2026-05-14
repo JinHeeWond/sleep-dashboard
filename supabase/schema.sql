@@ -63,6 +63,21 @@ create policy "Allow upload sleep-images"
   with check (bucket_id = 'sleep-images');
 
 
+-- 3-B) 기록 세션 제어 (웹 → Python 제어 신호)
+create table if not exists recording_sessions (
+  user_id     text primary key,
+  status      text not null default 'idle'  -- 'idle' | 'recording' | 'paused'
+              check (status in ('idle','recording','paused')),
+  started_at  timestamptz,
+  updated_at  timestamptz not null default now()
+);
+
+alter table recording_sessions enable row level security;
+drop policy if exists "demo all access recording_sessions" on recording_sessions;
+create policy "demo all access recording_sessions"
+  on recording_sessions for all using (true) with check (true);
+
+
 -- 4) RLS (Row Level Security)
 --    데모용으로 anon 키만 가지고도 읽기/쓰기 가능하게 열어둠.
 --    실제 배포 시에는 auth.uid()::text = user_id 정책으로 좁혀야 함.

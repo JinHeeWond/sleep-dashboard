@@ -9,7 +9,7 @@ import { Button, Card, CardTitle, Stat } from "@/components/ui";
 import { EmptyState } from "@/components/empty-state";
 import { useLang, type Lang } from "@/lib/lang";
 import { fmtDate } from "@/lib/i18n";
-import type { Posture, PostureLog, SleepSession } from "@/lib/types";
+import { POSTURE_COLOR, POSTURE_KO, type Posture, type PostureLog, type SleepSession } from "@/lib/types";
 
 type DistEntry = { posture: Posture; count: number; pct: number };
 
@@ -34,6 +34,8 @@ const COPY: Record<Lang, {
   records: (n: number) => string;
   timelineHint: string;
   timelineTitle: string;
+  snapshotsTitle: string;
+  snapshotsUnit: string;
   timelapse: string;
   timelapseTitle: string;
   timelapseHint: string;
@@ -56,6 +58,8 @@ const COPY: Record<Lang, {
     records: (n) => `${n}개 기록`,
     timelineHint: "시간대별",
     timelineTitle: "자세 변화 타임라인",
+    snapshotsTitle: "자세 스냅샷",
+    snapshotsUnit: "장",
     timelapse: "타임랩스",
     timelapseTitle: "30초 요약 영상",
     timelapseHint: "Python 사이드에서 mp4 업로드 시 표시",
@@ -88,6 +92,8 @@ const COPY: Record<Lang, {
     records: (n) => `${n} records`,
     timelineHint: "By hour",
     timelineTitle: "Posture timeline",
+    snapshotsTitle: "Posture snapshots",
+    snapshotsUnit: "photos",
     timelapse: "Timelapse",
     timelapseTitle: "30-second summary",
     timelapseHint: "Shown once the Python side uploads an mp4",
@@ -187,6 +193,56 @@ export function AnalysisView({
         <CardTitle hint={t.timelineHint}>{t.timelineTitle}</CardTitle>
         <PostureTimeline logs={logs} />
       </Card>
+
+      {(() => {
+        const snapshots = logs.filter((l) => l.image_path?.startsWith("http"));
+        if (snapshots.length === 0) return null;
+        return (
+          <Card className="mb-5">
+            <CardTitle hint={`${snapshots.length}${t.snapshotsUnit}`}>
+              {t.snapshotsTitle}
+            </CardTitle>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mb-2 snap-x snap-mandatory">
+              {snapshots.map((log, i) => (
+                <div key={i} className="flex-none w-40 snap-start">
+                  <div
+                    className="relative aspect-[4/3] rounded-xl overflow-hidden border bg-white/5"
+                    style={{ borderColor: `${POSTURE_COLOR[log.posture]}50` }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={log.image_path!}
+                      alt={POSTURE_KO[log.posture]}
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                    />
+                    <div
+                      className="absolute bottom-0 inset-x-0 h-8 pointer-events-none"
+                      style={{
+                        background: `linear-gradient(to top, ${POSTURE_COLOR[log.posture]}40, transparent)`,
+                      }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-1 px-0.5">
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      {new Date(log.timestamp * 1000).toLocaleTimeString(
+                        "ko-KR",
+                        { hour: "2-digit", minute: "2-digit" }
+                      )}
+                    </span>
+                    <span
+                      className="text-[10px] font-semibold"
+                      style={{ color: POSTURE_COLOR[log.posture] }}
+                    >
+                      {POSTURE_KO[log.posture].split(" ")[0]}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
 
       <div className="grid gap-5 grid-cols-1 lg:grid-cols-2 mb-5">
         <Card>

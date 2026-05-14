@@ -20,12 +20,26 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 from config import TABLE_POSTURE_LOG, TABLE_CONDITION
 
-# .env / .env.local 로드 (sleep-dashboard/.env.local 을 공용으로 사용)
+# .env / .env.local 로드
 try:
     from dotenv import load_dotenv
-    root = Path(__file__).parent.parent.parent  # sleep-dashboard/
-    load_dotenv(root / ".env.local")
-    load_dotenv(root / ".env")                  # 백업
+
+    # 후보 경로를 순서대로 시도 — 어느 경로에서 실행해도 찾을 수 있도록
+    _candidates = [
+        Path(__file__).resolve().parent.parent.parent,  # sleep-dashboard/ (db.py 기준)
+        Path.cwd(),                                     # 현재 작업 디렉토리
+        Path.cwd().parent,                              # 한 단계 위
+        Path.cwd().parent.parent,                       # 두 단계 위
+    ]
+    for _root in _candidates:
+        if (_root / ".env.local").exists():
+            load_dotenv(_root / ".env.local")
+            break
+        if (_root / ".env").exists():
+            load_dotenv(_root / ".env")
+            break
+    else:
+        print("[db] ⚠️  .env.local 파일을 찾지 못했습니다. 환경변수가 직접 설정되어 있어야 합니다.")
 except ImportError:
     pass
 
@@ -50,18 +64,39 @@ def get_client() -> Client:
 
 
 # ── 현재 사용자 식별자 ────────────────────────────
-# Kinect/Python 쪽은 Supabase Auth 로 직접 로그인하지 않으므로,
-# 웹에서 로그인한 본인의 user UUID 를 .env.local 에 SLEEP_USER_ID 로 넣어둬야 함.
-# 본인 UUID: Supabase 대시보드 → Authentication → Users → 본인 행 → ID
+# 우선순위:
+#   1) SLEEP_EMAIL + SLEEP_PASSWORD  → Supabase Auth 로그인 후 UUID 자동 취득
+#   2) SLEEP_USER_ID                 → 수동 입력 (구버전 호환)
+_cached_uid: str | None = None
+
 def _user_id() -> str:
+    global _cached_uid
+    if _cached_uid:
+        return _cached_uid
+
+    email    = os.environ.get("SLEEP_EMAIL")
+    password = os.environ.get("SLEEP_PASSWORD")
+    if email and password:
+        try:
+            resp = get_client().auth.sign_in_with_password(
+                {"email": email, "password": password}
+            )
+            _cached_uid = resp.user.id
+            print(f"[Auth] ✅ 로그인 성공: {email}")
+            return _cached_uid
+        except Exception as e:
+            raise EnvironmentError(f"[Auth] 로그인 실패: {e}")
+
     uid = os.environ.get("SLEEP_USER_ID")
-    if not uid:
-        raise EnvironmentError(
-            "환경변수 SLEEP_USER_ID 가 비어있습니다.\n"
-            "Supabase 대시보드 → Authentication → Users 에서 본인 UUID 를 복사해\n"
-            ".env.local 에 SLEEP_USER_ID=<uuid> 로 넣어주세요."
-        )
-    return uid
+    if uid:
+        _cached_uid = uid
+        return _cached_uid
+
+    raise EnvironmentError(
+        ".env.local 에 인증 정보를 입력해주세요.\n"
+        "  방법 1 (권장): SLEEP_EMAIL=이메일  SLEEP_PASSWORD=비밀번호\n"
+        "  방법 2 (수동): SLEEP_USER_ID=<uuid>"
+    )
 
 
 # ── Storage: 이미지 업로드 ─────────────────────────
