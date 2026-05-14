@@ -57,9 +57,11 @@ const COPY: Record<Lang, {
 export function MorningConditions({
   date,
   initial,
+  bare = false,
 }: {
   date: string;
   initial: MorningCondition | null;
+  bare?: boolean;
 }) {
   const { lang } = useLang();
   const t = COPY[lang];
@@ -79,15 +81,7 @@ export function MorningConditions({
     });
   }
 
-  return (
-    <Card>
-      <CardTitle hint={t.hint}>
-        <span className="inline-flex items-center gap-2">
-          <Coffee className="size-4 text-accent" />
-          {t.title}
-        </span>
-      </CardTitle>
-
+  const formBody = (
       <form action={onSubmit} className="space-y-5">
         <input type="hidden" name="date" value={date} />
 
@@ -184,6 +178,32 @@ export function MorningConditions({
           )}
         </button>
       </form>
+  );
+
+  if (bare) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <span className="inline-flex items-center gap-2 text-sm font-semibold text-foreground-soft">
+            <Coffee className="size-4 text-accent" />
+            {t.title}
+          </span>
+          <span className="text-[11px] text-muted-foreground/70">{t.hint}</span>
+        </div>
+        {formBody}
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardTitle hint={t.hint}>
+        <span className="inline-flex items-center gap-2">
+          <Coffee className="size-4 text-accent" />
+          {t.title}
+        </span>
+      </CardTitle>
+      {formBody}
     </Card>
   );
 }

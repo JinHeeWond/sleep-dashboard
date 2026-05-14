@@ -1,10 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { POSTURE_COLOR, POSTURE_KO, type Posture, type PostureLog } from "@/lib/types";
+import { POSTURE_COLOR, type Posture, type PostureLog } from "@/lib/types";
+import { POSTURE_LABEL } from "@/lib/i18n";
+import { useLang } from "@/lib/lang";
 
 // Compress per-minute logs into contiguous posture segments
 export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
+  const { lang } = useLang();
+  const locale = lang === "ko" ? "ko-KR" : "en-US";
   const segments = useMemo(() => {
     const regular = logs.filter((l) => l.capture_type === "regular");
     if (regular.length === 0) return [];
@@ -31,7 +35,7 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
   if (segments.length === 0) {
     return (
       <div className="text-sm text-muted-foreground py-12 text-center">
-        기록된 자세 데이터가 없습니다
+        {lang === "ko" ? "기록된 자세 데이터가 없습니다" : "No posture data recorded yet"}
       </div>
     );
   }
@@ -58,9 +62,9 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
                 background: `linear-gradient(180deg, ${POSTURE_COLOR[s.posture]} 0%, ${POSTURE_COLOR[s.posture]}cc 100%)`,
                 boxShadow: `0 0 12px ${POSTURE_COLOR[s.posture]}55`,
               }}
-              title={`${POSTURE_KO[s.posture]} · ${new Date(
+              title={`${POSTURE_LABEL[lang][s.posture]} · ${new Date(
                 s.start * 1000
-              ).toLocaleTimeString("ko-KR", {
+              ).toLocaleTimeString(locale, {
                 hour: "2-digit",
                 minute: "2-digit",
               })}`}
@@ -75,9 +79,9 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
               key={`m-${i}`}
               className="absolute top-1/2 -translate-y-1/2 size-2 rounded-full bg-accent ring-2 ring-background shadow-[0_0_8px_rgba(247,212,136,0.8)]"
               style={{ left: `calc(${left}% - 3px)` }}
-              title={`움직임 감지 · ${new Date(
+              title={`${lang === "ko" ? "움직임 감지" : "Motion"} · ${new Date(
                 m.timestamp * 1000
-              ).toLocaleTimeString("ko-KR", {
+              ).toLocaleTimeString(locale, {
                 hour: "2-digit",
                 minute: "2-digit",
               })}`}
@@ -85,18 +89,20 @@ export function PostureTimeline({ logs }: { logs: PostureLog[] }) {
           );
         })}
       </div>
-      <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+      <div className="flex justify-between text-[13px] text-muted-foreground tabular-nums">
         <span>
-          {startLabel.toLocaleTimeString("ko-KR", {
+          {startLabel.toLocaleTimeString(locale, {
             hour: "2-digit",
             minute: "2-digit",
           })}
         </span>
         <span>
-          {Math.round(total / 60)}분 · 움직임 {motionEvents.length}회
+          {lang === "ko"
+            ? `${Math.round(total / 60)}분 · 움직임 ${motionEvents.length}회`
+            : `${Math.round(total / 60)} min · ${motionEvents.length} motions`}
         </span>
         <span>
-          {endLabel.toLocaleTimeString("ko-KR", {
+          {endLabel.toLocaleTimeString(locale, {
             hour: "2-digit",
             minute: "2-digit",
           })}

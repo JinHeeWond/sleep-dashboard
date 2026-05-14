@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowDown,
   ArrowUpRight,
+  BarChart3,
   Camera,
   CheckCircle2,
   ChevronRight,
@@ -19,6 +20,7 @@ import {
   Quote,
   Sparkles,
   Star,
+  Sun,
   Timer,
   Waves,
   Zap,
@@ -101,10 +103,10 @@ type Copy = {
 
 const COPY: Record<Lang, Copy> = {
   ko: {
-    nav: { features: "기록", how: "사용 방법", faq: "FAQ", openDashboard: "대시보드 열기" },
+    nav: { features: "기록", how: "사용 방법", faq: "FAQ", openDashboard: "수면 기록 시작하기" },
     bar: { name: "SleepLab", cta: "기록 시작" },
     hero: {
-      badge: "착용 기기 없음",
+      badge: "착용형 기기 없이, 카메라 1대로",
       title: "SleepLab",
       sub: "잠든 사이의 자세를 자동으로 기록합니다.",
       scroll: "아래로",
@@ -258,10 +260,10 @@ const COPY: Record<Lang, Copy> = {
     footerRight: "자세 기록 도구",
   },
   en: {
-    nav: { features: "What's tracked", how: "How it works", faq: "FAQ", openDashboard: "Open dashboard" },
+    nav: { features: "What's tracked", how: "How it works", faq: "FAQ", openDashboard: "Start sleep tracking" },
     bar: { name: "SleepLab", cta: "Start recording" },
     hero: {
-      badge: "No wearables",
+      badge: "No wearables — just one camera",
       title: "SleepLab",
       sub: "Sleep posture, recorded automatically through the night.",
       scroll: "Scroll",
@@ -412,6 +414,12 @@ const EXTRA_ICONS: Record<string, typeof Camera> = {
   browser: Monitor,
 };
 
+const MORNING_ICONS: Record<string, typeof Camera> = {
+  wake: Sun,
+  report: Clock,
+  trend: BarChart3,
+};
+
 const STEP_ICONS = [Camera, Moon, LineChart];
 
 const svgUri = (svg: string) =>
@@ -542,7 +550,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <LanguageToggle />
               <Link
-                href="/dashboard"
+                href="/record"
                 className="hidden sm:inline-flex px-5 py-2 rounded-xl border border-primary-3/50 text-primary-3 text-sm font-semibold hover:bg-primary/15 hover:border-primary-3 transition-colors"
               >
                 {t.nav.openDashboard}
@@ -613,72 +621,21 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ─── Wordmark marquee ─── */}
-      <section className="relative py-10 md:py-12 border-y border-border/40 bg-background-2/40 overflow-hidden">
-        <div className="marquee-mask">
-          <div className="flex animate-marquee gap-14 md:gap-20 whitespace-nowrap items-center w-max">
-            {Array.from({ length: 2 }).flatMap((_, dup) => [
-              <span
-                key={`a-${dup}`}
-                className="text-2xl md:text-3xl font-extrabold uppercase tracking-tight text-foreground-soft/90"
-              >
-                Posture Tracking
-              </span>,
-              <span
-                key={`b-${dup}`}
-                className="text-2xl md:text-3xl italic font-light text-foreground-soft/70"
-              >
-                Night Timeline
-              </span>,
-              <span
-                key={`c-${dup}`}
-                className="text-2xl md:text-3xl font-medium tracking-[0.22em] uppercase text-primary-3/80"
-              >
-                IR · Depth
-              </span>,
-              <span
-                key={`d-${dup}`}
-                className="text-3xl md:text-4xl font-bold lowercase text-foreground-soft/85"
-              >
-                long-hold
-              </span>,
-              <span
-                key={`e-${dup}`}
-                className="text-2xl md:text-3xl italic text-accent/80"
-              >
-                Movement Insights
-              </span>,
-              <span
-                key={`f-${dup}`}
-                className="text-2xl md:text-3xl font-light text-foreground-soft/70 tracking-wide"
-              >
-                30-min Holds
-              </span>,
-              <span
-                key={`g-${dup}`}
-                className="text-2xl md:text-3xl font-extrabold uppercase tracking-[0.18em] text-foreground-soft/85"
-              >
-                Self-Tracking
-              </span>,
-              <span
-                key={`h-${dup}`}
-                className="text-2xl md:text-3xl italic font-light text-primary-3/75"
-              >
-                Posture Distribution
-              </span>,
-              <span
-                key={`i-${dup}`}
-                className="text-2xl md:text-3xl font-medium text-foreground-soft/80 lowercase"
-              >
-                six positions
-              </span>,
-              <span
-                key={`j-${dup}`}
-                className="text-2xl md:text-3xl font-light tracking-[0.3em] uppercase text-muted-foreground/80"
-              >
-                HCI · 2026
-              </span>,
-            ])}
+      {/* ─── Keyword strip (static) ─── */}
+      <section className="relative py-10 md:py-12 border-y border-border/40 bg-background-2/40">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm md:text-base text-foreground-soft/85">
+            <span className="font-semibold uppercase tracking-[0.18em] text-primary-3/90">자세 분포</span>
+            <span className="opacity-30">·</span>
+            <span className="font-light tracking-wide">밤새 타임라인</span>
+            <span className="opacity-30">·</span>
+            <span className="font-medium uppercase tracking-[0.18em] text-accent/85">IR Depth</span>
+            <span className="opacity-30">·</span>
+            <span className="font-light">장시간 자세 감지</span>
+            <span className="opacity-30">·</span>
+            <span className="font-medium">움직임 분석</span>
+            <span className="opacity-30">·</span>
+            <span className="font-light tracking-wider uppercase text-muted-foreground/80">HCI · 2026</span>
           </div>
         </div>
       </section>
@@ -696,6 +653,41 @@ export default function LandingPage() {
               {t.intro.desc}
             </p>
           </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ─── 3-column app preview (moved up: dashboard overview first) ─── */}
+      <section className="px-8 py-20">
+        <div className="max-w-5xl mx-auto">
+          <ScrollReveal>
+            <h2 className="text-2xl md:text-4xl font-bold text-foreground tracking-tight mb-12 text-center">
+              {t.preview.title}
+            </h2>
+          </ScrollReveal>
+
+          <div
+            className="relative w-full mb-6"
+            style={{ height: 720 }}
+          >
+            <Masonry
+              items={[
+                { id: "tile-1", img: MASONRY_TILES[0], height: 560 },
+                { id: "tile-2", img: MASONRY_TILES[1], height: 360 },
+                { id: "tile-3", img: MASONRY_TILES[2], height: 500 },
+                { id: "tile-4", img: MASONRY_TILES[3], height: 320 },
+                { id: "tile-5", img: MASONRY_TILES[4], height: 440 },
+                { id: "tile-6", img: MASONRY_TILES[5], height: 380 },
+              ]}
+              ease="power3.out"
+              duration={0.6}
+              stagger={0.05}
+              animateFrom="bottom"
+              scaleOnHover
+              hoverScale={0.97}
+              blurToFocus
+            />
+          </div>
+
         </div>
       </section>
 
@@ -725,7 +717,7 @@ export default function LandingPage() {
             <ScrollReveal delay={0.05}>
               <GlassSurface
                 width="100%"
-                height={340}
+                height={400}
                 borderRadius={24}
                 backgroundOpacity={0.18}
                 brightness={55}
@@ -776,7 +768,7 @@ export default function LandingPage() {
             <ScrollReveal delay={0.1}>
               <GlassSurface
                 width="100%"
-                height={340}
+                height={400}
                 borderRadius={24}
                 backgroundOpacity={0.18}
                 brightness={55}
@@ -808,10 +800,13 @@ export default function LandingPage() {
 
             {/* Link card */}
             <ScrollReveal delay={0.15}>
-              <Link href={t.big.cards.link.href} className="block group">
+              <Link
+                href={t.big.cards.link.href}
+                className="block group cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:drop-shadow-[0_20px_45px_rgba(139,92,246,0.45)]"
+              >
                 <GlassSurface
                   width="100%"
-                  height={340}
+                  height={400}
                   borderRadius={24}
                   backgroundOpacity={0.18}
                   brightness={55}
@@ -824,62 +819,27 @@ export default function LandingPage() {
                   blueOffset={25}
                   mixBlendMode="screen"
                 >
-                  <div className="relative w-full h-full p-6 flex flex-col justify-between text-left overflow-hidden rounded-[24px]">
+                  <div className="relative w-full h-full p-6 flex flex-col justify-between text-left overflow-hidden rounded-[24px] ring-1 ring-transparent group-hover:ring-primary-3/50 transition-all">
                     <div>
-                      <div className="text-[10px] uppercase tracking-[0.22em] text-primary-3/90 font-semibold mb-3">
+                      <div className="text-[10px] uppercase tracking-[0.22em] text-primary-3/90 font-semibold mb-3 group-hover:text-accent transition-colors">
                         {t.big.cards.link.eyebrow}
                       </div>
-                      <h3 className="text-lg font-bold text-foreground mb-2">
+                      <h3 className="text-lg font-bold text-foreground mb-2 group-hover:text-primary-3 transition-colors">
                         {t.big.cards.link.title}
                       </h3>
                       <p className="text-sm text-foreground-soft/85 leading-relaxed">
                         {t.big.cards.link.desc}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-primary-3 mt-6 group-hover:gap-3 transition-all">
-                      <span>↗</span>
-                      <ChevronRight className="size-4" />
+                    <div className="flex items-center gap-2 text-sm text-primary-3 mt-6 group-hover:gap-3 group-hover:text-accent transition-all">
+                      <span className="font-semibold">{t.big.cards.link.eyebrow}</span>
+                      <ChevronRight className="size-4 group-hover:translate-x-1 transition-transform" />
                     </div>
                   </div>
                 </GlassSurface>
               </Link>
             </ScrollReveal>
           </div>
-        </div>
-      </section>
-
-      {/* ─── 3-column app preview ─── */}
-      <section className="px-8 py-20">
-        <div className="max-w-5xl mx-auto">
-          <ScrollReveal>
-            <h2 className="text-2xl md:text-4xl font-bold text-foreground tracking-tight mb-12 text-center">
-              {t.preview.title}
-            </h2>
-          </ScrollReveal>
-
-          <div
-            className="relative w-full mb-6"
-            style={{ height: 720 }}
-          >
-            <Masonry
-              items={[
-                { id: "tile-1", img: MASONRY_TILES[0], height: 560 },
-                { id: "tile-2", img: MASONRY_TILES[1], height: 360 },
-                { id: "tile-3", img: MASONRY_TILES[2], height: 500 },
-                { id: "tile-4", img: MASONRY_TILES[3], height: 320 },
-                { id: "tile-5", img: MASONRY_TILES[4], height: 440 },
-                { id: "tile-6", img: MASONRY_TILES[5], height: 380 },
-              ]}
-              ease="power3.out"
-              duration={0.6}
-              stagger={0.05}
-              animateFrom="bottom"
-              scaleOnHover
-              hoverScale={0.97}
-              blurToFocus
-            />
-          </div>
-
         </div>
       </section>
 
@@ -943,6 +903,46 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ─── How it works (moved up: right after device intro) ─── */}
+      <section id="how" className="px-8 py-24 max-w-5xl mx-auto">
+        <ScrollReveal>
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/30 text-[11px] uppercase tracking-[0.18em] text-accent mb-4">
+              <Clock className="size-3" /> {t.how.eyebrow}
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold mb-3 text-foreground">
+              {t.how.title}
+            </h2>
+            <p className="text-muted-foreground max-w-lg mx-auto">{t.how.desc}</p>
+          </div>
+        </ScrollReveal>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {t.how.steps.map((step, i) => {
+            const Icon = STEP_ICONS[i] ?? Camera;
+            return (
+              <ScrollReveal key={step.num} delay={0.08 * i} direction="up">
+                <div className="relative p-6 rounded-2xl border border-border/60 bg-card/40 backdrop-blur-md hover:border-primary-3/40 transition-all group">
+                  {i < t.how.steps.length - 1 && (
+                    <div className="absolute top-1/2 -right-3 w-6 h-px bg-border-strong hidden md:block" />
+                  )}
+                  <div className="mb-4 size-10 rounded-xl bg-gradient-to-br from-primary/25 to-accent/15 grid place-items-center text-primary-3 group-hover:text-accent transition-colors">
+                    <Icon className="size-5" />
+                  </div>
+                  <div className="text-[10px] font-mono text-primary-3/70 mb-1 tracking-widest">
+                    Step {step.num}
+                  </div>
+                  <h4 className="font-bold text-foreground mb-1.5 group-hover:text-primary-3 transition-colors">
+                    {step.title}
+                  </h4>
+                  <p className="text-sm text-foreground-soft/85 leading-relaxed">{step.desc}</p>
+                </div>
+              </ScrollReveal>
+            );
+          })}
+        </div>
+      </section>
+
       {/* ─── Tracking 4-card grid ─── */}
       <section id="tracked" className="px-8 py-24">
         <div className="max-w-5xl mx-auto">
@@ -999,35 +999,20 @@ export default function LandingPage() {
           </ScrollReveal>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {t.morning.items.map((item, i) => (
+            {t.morning.items.map((item, i) => {
+              const Icon = MORNING_ICONS[item.id] ?? Sparkles;
+              return (
               <ScrollReveal key={item.id} delay={0.06 * i}>
-                <div className="h-full rounded-3xl border border-border/60 bg-card/40 backdrop-blur-md p-6">
-                  {/* Mock browser frame */}
-                  <div className="rounded-2xl border border-border/60 bg-background/60 overflow-hidden mb-5">
-                    <div className="flex items-center gap-1 px-3 py-2 border-b border-border/50 bg-muted-2/30">
-                      <span className="size-1.5 rounded-full bg-red-400/60" />
-                      <span className="size-1.5 rounded-full bg-yellow-400/60" />
-                      <span className="size-1.5 rounded-full bg-green-400/60" />
-                    </div>
-                    <div className="aspect-[4/3] p-4 grid place-items-center">
-                      <div className="w-full space-y-2">
-                        <div className="h-2 rounded-full bg-muted-2 overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-primary to-accent w-3/4" />
-                        </div>
-                        <div className="h-2 rounded-full bg-muted-2 overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-primary-2 to-primary-3 w-1/2" />
-                        </div>
-                        <div className="h-2 rounded-full bg-muted-2 overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-accent to-primary-3 w-2/3" />
-                        </div>
-                      </div>
-                    </div>
+                <div className="h-full rounded-3xl border border-border/60 bg-card/40 backdrop-blur-md p-6 hover:border-primary-3/40 transition-colors">
+                  <div className="size-14 rounded-2xl bg-gradient-to-br from-primary/25 to-accent/15 grid place-items-center text-primary-3 mb-5">
+                    <Icon className="size-7" />
                   </div>
-                  <h3 className="font-bold text-foreground mb-1.5">{item.title}</h3>
+                  <h3 className="font-bold text-foreground mb-1.5 text-base">{item.title}</h3>
                   <p className="text-sm text-foreground-soft/80 leading-relaxed">{item.desc}</p>
                 </div>
               </ScrollReveal>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1046,19 +1031,19 @@ export default function LandingPage() {
             </div>
           </ScrollReveal>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
             {t.extra.items.map((item, i) => {
               const Icon = EXTRA_ICONS[item.id] ?? CheckCircle2;
               return (
                 <ScrollReveal key={item.id} delay={0.04 * i}>
-                  <div className="h-full p-5 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-md">
-                    <div className="size-10 rounded-xl bg-primary/15 grid place-items-center text-primary-3 mb-4">
+                  <div className="h-full p-6 rounded-3xl border border-border/60 bg-card/40 backdrop-blur-md hover:border-primary-3/40 transition-colors">
+                    <div className="size-12 rounded-2xl bg-gradient-to-br from-primary/25 to-accent/15 grid place-items-center text-primary-3 mb-4">
                       <Icon className="size-5" />
                     </div>
-                    <div className="font-semibold text-foreground text-sm mb-1.5">
+                    <div className="font-bold text-foreground text-sm mb-1.5">
                       {item.title}
                     </div>
-                    <p className="text-xs text-foreground-soft/75 leading-relaxed">
+                    <p className="text-xs text-foreground-soft/80 leading-relaxed">
                       {item.desc}
                     </p>
                   </div>
@@ -1066,46 +1051,6 @@ export default function LandingPage() {
               );
             })}
           </div>
-        </div>
-      </section>
-
-      {/* ─── How it works ─── */}
-      <section id="how" className="px-8 py-24 max-w-5xl mx-auto">
-        <ScrollReveal>
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/30 text-[11px] uppercase tracking-[0.18em] text-accent mb-4">
-              <Clock className="size-3" /> {t.how.eyebrow}
-            </div>
-            <h2 className="text-3xl md:text-4xl font-bold mb-3 text-foreground">
-              {t.how.title}
-            </h2>
-            <p className="text-muted-foreground max-w-lg mx-auto">{t.how.desc}</p>
-          </div>
-        </ScrollReveal>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {t.how.steps.map((step, i) => {
-            const Icon = STEP_ICONS[i] ?? Camera;
-            return (
-              <ScrollReveal key={step.num} delay={0.08 * i} direction="up">
-                <div className="relative p-6 rounded-2xl border border-border/60 bg-card/40 backdrop-blur-md hover:border-primary-3/40 transition-all group">
-                  {i < t.how.steps.length - 1 && (
-                    <div className="absolute top-1/2 -right-3 w-6 h-px bg-border-strong hidden md:block" />
-                  )}
-                  <div className="mb-4 size-10 rounded-xl bg-gradient-to-br from-primary/25 to-accent/15 grid place-items-center text-primary-3 group-hover:text-accent transition-colors">
-                    <Icon className="size-5" />
-                  </div>
-                  <div className="text-[10px] font-mono text-primary-3/70 mb-1 tracking-widest">
-                    Step {step.num}
-                  </div>
-                  <h4 className="font-bold text-foreground mb-1.5 group-hover:text-primary-3 transition-colors">
-                    {step.title}
-                  </h4>
-                  <p className="text-sm text-foreground-soft/85 leading-relaxed">{step.desc}</p>
-                </div>
-              </ScrollReveal>
-            );
-          })}
         </div>
       </section>
 

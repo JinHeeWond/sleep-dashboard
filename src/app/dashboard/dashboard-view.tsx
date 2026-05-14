@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, Moon, TrendingUp } from "lucide-react";
+import { Camera } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PostureLegend, PosturePie } from "@/components/posture-pie";
 import { PostureTimeline } from "@/components/posture-timeline";
@@ -47,15 +47,11 @@ const COPY: Record<Lang, {
   weekAvgSleepHintUp: (m: number) => string;
   weekAvgSleepHintDown: (m: number) => string;
   postureDist: string;
+  postureDistDesc: string;
   timelineRange: string;
   timelineTitle: string;
+  timelineDesc: string;
   motionEvent: string;
-  weeklyTrend: string;
-  weeklyTrendHint: (n: number) => string;
-  weeklyTrendTooltip: (date: string, hours: number, mins: number) => string;
-  nextStep: string;
-  nextStepBody: string;
-  nextStepCta: string;
 }> = {
   ko: {
     greeting: (name) => `좋은 아침이에요, ${name}님 🌤️`,
@@ -75,15 +71,11 @@ const COPY: Record<Lang, {
     weekAvgSleepHintUp: (m) => `+${m}분 길어짐`,
     weekAvgSleepHintDown: (m) => `${m}분 짧아짐`,
     postureDist: "자세 분포",
+    postureDistDesc: "지난밤 동안 어떤 자세로 얼마나 머물렀는지 시간 비율로 정리했어요.",
     timelineRange: "00:00 — 07:00",
     timelineTitle: "밤 동안의 자세 변화",
+    timelineDesc: "잠든 시간부터 깨어난 시간까지, 자세가 어떻게 바뀌었는지 시간 순서대로 표시합니다.",
     motionEvent: "움직임 감지 이벤트",
-    weeklyTrend: "주간 수면 추세",
-    weeklyTrendHint: (n) => `최근 ${n}일 수면 시간`,
-    weeklyTrendTooltip: (date, h, m) => `${date}: ${h}시간 ${m}분`,
-    nextStep: "다음 단계",
-    nextStepBody: "취침 30분 전 알람을 설정하고 분석을 자동으로 시작하세요.",
-    nextStepCta: "기록 설정",
   },
   en: {
     greeting: (name) => `Good morning, ${name} 🌤️`,
@@ -103,15 +95,11 @@ const COPY: Record<Lang, {
     weekAvgSleepHintUp: (m) => `+${m}m longer`,
     weekAvgSleepHintDown: (m) => `${m}m shorter`,
     postureDist: "Posture distribution",
+    postureDistDesc: "Time spent in each posture through the night, as a percentage.",
     timelineRange: "00:00 — 07:00",
     timelineTitle: "Posture across the night",
+    timelineDesc: "How your posture shifted from when you fell asleep to when you woke up.",
     motionEvent: "Motion-detected events",
-    weeklyTrend: "Weekly sleep trend",
-    weeklyTrendHint: (n) => `Last ${n}-day sleep duration`,
-    weeklyTrendTooltip: (date, h, m) => `${date}: ${h}h ${m}m`,
-    nextStep: "Next step",
-    nextStepBody: "Set an alarm 30 minutes before bed and let the recorder start automatically.",
-    nextStepCta: "Configure recording",
   },
 };
 
@@ -135,7 +123,6 @@ export function DashboardView({
   const top = distribution.reduce((a, b) => (b.count > a.count ? b : a));
   const totalH = Math.floor(session.duration_min / 60);
   const totalM = session.duration_min % 60;
-  const maxDuration = Math.max(...history.map((h) => h.duration_min), 1);
 
   return (
     <>
@@ -196,10 +183,14 @@ export function DashboardView({
               }
             />
           </div>
+
+          <div className="mt-6 pt-6 border-t border-white/[0.08]">
+            <MorningConditions date={today} initial={condition} bare />
+          </div>
         </Card>
 
         <Card>
-          <CardTitle>{t.postureDist}</CardTitle>
+          <CardTitle description={t.postureDistDesc}>{t.postureDist}</CardTitle>
           <PosturePie data={distribution} />
           <div className="mt-2">
             <PostureLegend data={distribution} />
@@ -207,56 +198,14 @@ export function DashboardView({
         </Card>
       </div>
 
-      <Card className="mb-5">
-        <CardTitle hint={t.timelineRange}>{t.timelineTitle}</CardTitle>
+      <Card>
+        <CardTitle hint={t.timelineRange} description={t.timelineDesc}>{t.timelineTitle}</CardTitle>
         <PostureTimeline logs={logs} />
-        <div className="mt-5 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-5 flex flex-wrap gap-2 text-[12px] text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-accent shadow-[0_0_8px_rgba(247,212,136,0.8)]" />
             {t.motionEvent}
           </span>
-        </div>
-      </Card>
-
-      <div className="grid gap-5 grid-cols-1 lg:grid-cols-3 mb-5">
-        <div className="lg:col-span-2">
-          <MorningConditions date={today} initial={condition} />
-        </div>
-        <Card>
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3 font-semibold">
-            <Moon className="size-3.5 text-accent" /> {t.nextStep}
-          </div>
-          <p className="text-sm leading-relaxed mb-4 text-foreground-soft">
-            {t.nextStepBody}
-          </p>
-          <Link href="/record">
-            <Button variant="secondary" size="sm">
-              {t.nextStepCta}
-            </Button>
-          </Link>
-        </Card>
-      </div>
-
-      <Card>
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-4 font-semibold">
-          <TrendingUp className="size-3.5" /> {t.weeklyTrend}
-        </div>
-        <div className="flex items-end gap-1.5 h-20">
-          {history.map((h) => {
-            const hours = Math.floor(h.duration_min / 60);
-            const mins = h.duration_min % 60;
-            return (
-              <div
-                key={h.date}
-                className="flex-1 rounded-full bg-gradient-to-t from-primary-2/60 via-primary/80 to-primary-3 shadow-[0_0_12px_rgba(139,92,246,0.4)]"
-                style={{ height: `${(h.duration_min / maxDuration) * 100}%` }}
-                title={t.weeklyTrendTooltip(h.date, hours, mins)}
-              />
-            );
-          })}
-        </div>
-        <div className="mt-3 text-[11px] text-muted-foreground">
-          {t.weeklyTrendHint(history.length)}
         </div>
       </Card>
       </>

@@ -46,7 +46,7 @@ export function PosturePie({ data }: { data: DistEntry[] }) {
               border: "1px solid rgba(255,255,255,0.12)",
               background: "rgba(26, 22, 69, 0.92)",
               backdropFilter: "blur(12px)",
-              fontSize: 12,
+              fontSize: 14,
               color: "#f5f3ff",
               boxShadow: "0 12px 30px rgba(0,0,0,0.5)",
             }}
@@ -92,7 +92,7 @@ export function PostureLegend({ data }: { data: DistEntry[] }) {
             </span>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="tabular-nums text-muted-foreground text-xs">
+            <span className="tabular-nums text-muted-foreground text-sm">
               {d.count}{unit}
             </span>
             <span className="tabular-nums font-semibold w-12 text-right text-foreground">

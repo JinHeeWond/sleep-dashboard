@@ -44,13 +44,13 @@ export function HistoryChart({ data }: { data: SleepSession[] }) {
             />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 11, fill: "#a8a3d4" }}
+              tick={{ fontSize: 13, fill: "#a8a3d4" }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
               domain={[0, 12]}
-              tick={{ fontSize: 11, fill: "#a8a3d4" }}
+              tick={{ fontSize: 13, fill: "#a8a3d4" }}
               axisLine={false}
               tickLine={false}
             />
@@ -60,7 +60,7 @@ export function HistoryChart({ data }: { data: SleepSession[] }) {
                 border: "1px solid rgba(255,255,255,0.12)",
                 background: "rgba(26, 22, 69, 0.92)",
                 backdropFilter: "blur(12px)",
-                fontSize: 12,
+                fontSize: 14,
                 color: "#f5f3ff",
                 boxShadow: "0 12px 30px rgba(0,0,0,0.5)",
               }}

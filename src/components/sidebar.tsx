@@ -7,6 +7,7 @@ import {
   BarChart3,
   BookOpen,
   Home,
+  Lightbulb,
   Moon,
   PlayCircle,
   Sparkles,
@@ -20,7 +21,7 @@ const NAV = [
   {
     href: "/dashboard",
     icon: Home,
-    label: { ko: "대시보드", en: "Dashboard" },
+    label: { ko: "홈", en: "Home" },
   },
   {
     href: "/record",
@@ -36,6 +37,11 @@ const NAV = [
     href: "/history",
     icon: Activity,
     label: { ko: "수면 이력", en: "History" },
+  },
+  {
+    href: "/coaching",
+    icon: Lightbulb,
+    label: { ko: "수면 코칭", en: "Coaching" },
   },
   {
     href: "/info",
@@ -142,7 +148,7 @@ export function MobileNav() {
   const { lang } = useLang();
   return (
     <nav className="md:hidden fixed bottom-3 inset-x-3 z-40 rounded-3xl border border-white/10 bg-[#15123a]/85 backdrop-blur-xl shadow-[0_20px_50px_-20px_rgba(0,0,0,0.6)]">
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
@@ -150,12 +156,12 @@ export function MobileNav() {
               key={href}
               href={href}
               className={cn(
-                "flex flex-col items-center gap-0.5 py-2.5 text-[10px] transition-colors",
+                "flex flex-col items-center gap-0.5 py-2.5 text-[9px] transition-colors",
                 active ? "text-primary-3" : "text-muted-foreground"
               )}
             >
-              <Icon className="size-[18px]" />
-              <span className="font-medium">{label[lang]}</span>
+              <Icon className="size-[17px]" />
+              <span className="font-medium leading-tight">{label[lang]}</span>
             </Link>
           );
         })}

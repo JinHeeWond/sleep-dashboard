@@ -5,9 +5,12 @@
 import { createClient, isSupabaseConfigured } from "./supabase/server";
 import type {
   MorningCondition,
+  Posture,
   PostureLog,
   SleepSession,
 } from "./types";
+
+export type PostureDistEntry = { posture: Posture; count: number; pct: number };
 
 const TABLE_POSTURE = "posture_log";
 const TABLE_CONDITION = "morning_conditions";
@@ -137,6 +140,71 @@ export async function fetchMorningCondition(
     .eq("date", date)
     .maybeSingle();
   return (data as MorningCondition | null) ?? null;
+}
+
+export async function fetchMorningConditions(
+  userId: string,
+  days = 14
+): Promise<Record<string, MorningCondition>> {
+  const sb = await createClient();
+  if (!sb) return {};
+
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  const startStr = start.toISOString().slice(0, 10);
+
+  const { data } = await sb
+    .from(TABLE_CONDITION)
+    .select("*")
+    .eq("user_id", userId)
+    .gte("date", startStr);
+
+  const out: Record<string, MorningCondition> = {};
+  for (const row of (data as MorningCondition[] | null) ?? []) {
+    out[row.date] = row;
+  }
+  return out;
+}
+
+export async function fetchPostureDistributionRange(
+  userId: string,
+  days = 14
+): Promise<PostureDistEntry[]> {
+  const sb = await createClient();
+  if (!sb) return [];
+
+  const start = new Date();
+  start.setDate(start.getDate() - (days - 1));
+  const startStr = start.toISOString().slice(0, 10);
+
+  const { data } = await sb
+    .from(TABLE_POSTURE)
+    .select("posture")
+    .eq("user_id", userId)
+    .gte("datetime", `${startStr} 00:00:00`);
+
+  const rows = (data as { posture: Posture }[] | null) ?? [];
+  if (rows.length === 0) return [];
+
+  const counts: Record<Posture, number> = {
+    Supine: 0,
+    Prone: 0,
+    Lateral_L: 0,
+    Lateral_R: 0,
+    Unknown: 0,
+  };
+  for (const r of rows) {
+    counts[r.posture] = (counts[r.posture] ?? 0) + 1;
+  }
+  const total = rows.length;
+  return (Object.entries(counts) as [Posture, number][])
+    .filter(([, c]) => c > 0)
+    .map(([posture, count]) => ({
+      posture,
+      count,
+      pct: Math.round((count / total) * 100),
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 export { isSupabaseConfigured };

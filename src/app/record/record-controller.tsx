@@ -35,17 +35,17 @@ const COPY: Record<Lang, {
 }> = {
   ko: {
     status: "상태", recording: "기록 중", idle: "대기", elapsed: "경과 시간",
-    streamLabel: "Azure Kinect Depth Stream",
+    streamLabel: "수면 자세 카메라",
     analyzing: "실시간 분석 중…",
-    waiting: "Kinect 데이터 수신 대기 중… (Windows PC에서 Python 스크립트를 실행하면 표시됩니다)",
-    startHint: "기록을 시작하면 Kinect 스트림이 표시됩니다",
+    waiting: "기록 중 · 카메라 연결을 확인하고 있어요. 침대 옆 카메라가 켜져 있는지 확인해 주세요.",
+    startHint: "기록을 시작하면 카메라 영상이 표시됩니다",
     current: "현재",
     start: "기록 시작", pause: "일시 정지", reset: "초기화",
     regular: "정기", motion: "움직임",
     events: {
-      hint: "실시간", title: "감지 이벤트",
-      empty: "기록을 시작하면 이벤트가 여기 표시됩니다",
-      waiting: "Supabase에 새 행이 없습니다. Kinect PC에서 Python 업로더를 확인하세요.",
+      hint: "실시간", title: "자세 기록",
+      empty: "기록을 시작하면 자세 변화가 여기 표시됩니다",
+      waiting: "아직 새 기록이 없어요. 카메라가 자세를 인식하면 여기에 표시됩니다.",
       reg: "정기", mot: "움직임",
     },
     options: {
@@ -59,17 +59,17 @@ const COPY: Record<Lang, {
   },
   en: {
     status: "Status", recording: "Recording", idle: "Idle", elapsed: "Elapsed",
-    streamLabel: "Azure Kinect Depth Stream",
+    streamLabel: "Sleep posture camera",
     analyzing: "Analyzing in real time…",
-    waiting: "Waiting for Kinect data… (run the Python script on the Windows PC)",
-    startHint: "Start recording to see the Kinect stream",
+    waiting: "Recording · checking camera. Make sure the bedside camera is powered on.",
+    startHint: "Start recording to see the camera feed",
     current: "Current",
     start: "Start recording", pause: "Pause", reset: "Reset",
     regular: "Regular", motion: "Motion",
     events: {
-      hint: "Live", title: "Detected events",
-      empty: "Events will appear here once recording starts",
-      waiting: "No new rows in Supabase yet. Check the Python uploader on the Kinect PC.",
+      hint: "Live", title: "Posture log",
+      empty: "Posture changes will appear here once recording starts",
+      waiting: "No new entries yet. Posture changes will appear here as they're detected.",
       reg: "Regular", mot: "Motion",
     },
     options: {

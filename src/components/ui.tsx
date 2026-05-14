@@ -27,20 +27,29 @@ export function CardTitle({
   children,
   className,
   hint,
+  description,
 }: {
   children: ReactNode;
   className?: string;
   hint?: string;
+  description?: string;
 }) {
   return (
-    <div className={cn("flex items-baseline justify-between gap-3 mb-5", className)}>
-      <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
-        {children}
-      </h3>
-      {hint && (
-        <span className="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">
-          {hint}
-        </span>
+    <div className={cn("mb-5", className)}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-base md:text-[17px] font-semibold tracking-tight text-foreground">
+          {children}
+        </h3>
+        {hint && (
+          <span className="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">
+            {hint}
+          </span>
+        )}
+      </div>
+      {description && (
+        <p className="mt-1.5 text-[13px] text-muted-foreground/85 leading-relaxed">
+          {description}
+        </p>
       )}
     </div>
   );
