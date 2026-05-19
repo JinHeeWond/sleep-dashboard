@@ -1,6 +1,7 @@
 import {
   fetchPostureLogs,
   fetchSession,
+  fetchTimelapse,
   todayStr,
 } from "@/lib/data";
 import { summarizeLogs } from "@/lib/mock-data";
@@ -16,9 +17,10 @@ export default async function AnalysisPage({ searchParams }: SearchParams) {
   const params = (await searchParams) ?? {};
   const date = params.date ?? todayStr();
 
-  const [logs, session] = await Promise.all([
+  const [logs, session, timelapse] = await Promise.all([
     fetchPostureLogs(date, user.id),
     fetchSession(date, user.id),
+    fetchTimelapse(date, user.id),
   ]);
   const summary = summarizeLogs(logs);
 
@@ -29,6 +31,8 @@ export default async function AnalysisPage({ searchParams }: SearchParams) {
       session={session}
       distribution={summary.distribution}
       total={summary.total}
+      timelapseUrl={timelapse?.url ?? null}
+      timelapseSec={timelapse?.duration_sec ?? null}
     />
   );
 }

@@ -207,4 +207,20 @@ export async function fetchPostureDistributionRange(
     .sort((a, b) => b.count - a.count);
 }
 
+export async function fetchTimelapse(
+  date: string,
+  userId: string
+): Promise<{ url: string; duration_sec: number; frame_count: number } | null> {
+  const sb = await createClient();
+  if (!sb) return null;
+  const { data } = await sb
+    .from("timelapse_videos")
+    .select("url,duration_sec,frame_count")
+    .eq("user_id", userId)
+    .eq("date", date)
+    .limit(1)
+    .maybeSingle();
+  return data ?? null;
+}
+
 export { isSupabaseConfigured };

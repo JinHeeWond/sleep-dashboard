@@ -18,7 +18,8 @@ from datetime import datetime
 
 # backend/ 를 sys.path 에 추가 (config.py 와 utils 패키지가 거기 있음)
 sys.path.append(str(Path(__file__).parent.parent))
-from config import TABLE_POSTURE_LOG, TABLE_CONDITION
+TABLE_POSTURE_LOG = "posture_log"
+TABLE_CONDITION   = "morning_conditions"
 
 # .env / .env.local 로드
 try:
@@ -333,6 +334,86 @@ def fetch_condition_all() -> list[dict]:
         .execute()
     )
     return result.data or []
+
+
+# ── 타임랩스 ──────────────────────────────────────
+TABLE_TIMELAPSE = "timelapse_videos"
+
+
+def upload_timelapse(local_path: str, date_str: str) -> str:
+    """
+    로컬 mp4를 Supabase Storage에 업로드하고 공개 URL 반환.
+    storage_path: timelapse/YYYYMMDD_timelapse.mp4
+    """
+    supabase     = get_client()
+    storage_path = f"timelapse/{date_str.replace('-', '')}_timelapse.mp4"
+
+    with open(local_path, "rb") as f:
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            path         = storage_path,
+            file         = f,
+            file_options = {"content-type": "video/mp4", "upsert": "true"},
+        )
+
+    url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(storage_path)
+    print(f"[Storage] ✅ 타임랩스 업로드 완료 → {url}")
+    return url
+
+
+def save_timelapse(date_str: str, url: str,
+                   duration_sec: float, frame_count: int) -> dict:
+    """타임랩스 URL을 timelapse_videos 테이블에 저장 (날짜 기준 upsert)."""
+    supabase = get_client()
+    result   = (
+        supabase.table(TABLE_TIMELAPSE)
+        .upsert(
+            {
+                "user_id":      _user_id(),
+                "date":         date_str,
+                "url":          url,
+                "duration_sec": round(duration_sec, 1),
+                "frame_count":  frame_count,
+            },
+            on_conflict="user_id,date",
+        )
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+def fetch_timelapse(date_str: str) -> dict:
+    """특정 날짜 타임랩스 URL 조회."""
+    supabase = get_client()
+    result   = (
+        supabase.table(TABLE_TIMELAPSE)
+        .select("*")
+        .eq("user_id", _user_id())
+        .eq("date", date_str)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+# ── 캡처 설정 ─────────────────────────────────────
+_SETTINGS_DEFAULTS = {"interval_sec": 300, "motion_thr": 25, "motion_cooldown": 300}
+
+def fetch_capture_settings() -> dict:
+    """현재 사용자의 캡처 설정 조회. 없으면 기본값 반환."""
+    try:
+        supabase = get_client()
+        result = (
+            supabase.table("recording_sessions")
+            .select("settings")
+            .eq("user_id", _user_id())
+            .limit(1)
+            .execute()
+        )
+        if result.data and result.data[0].get("settings"):
+            return {**_SETTINGS_DEFAULTS, **result.data[0]["settings"]}
+    except Exception as e:
+        print(f"[설정] 조회 실패, 기본값 사용: {e}")
+    return dict(_SETTINGS_DEFAULTS)
 
 
 # ── 연결 테스트 ────────────────────────────────────

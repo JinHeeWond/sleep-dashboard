@@ -63,14 +63,37 @@ create policy "Allow upload sleep-images"
   with check (bucket_id = 'sleep-images');
 
 
--- 3-B) 기록 세션 제어 (웹 → Python 제어 신호)
+-- 3-B) 타임랩스 영상 (날짜별 mp4 Storage URL 저장)
+create table if not exists timelapse_videos (
+  id           bigserial primary key,
+  user_id      text not null,
+  date         date not null,
+  url          text not null,
+  duration_sec float,
+  frame_count  int,
+  created_at   timestamptz not null default now(),
+  unique (user_id, date)
+);
+create index if not exists timelapse_videos_user_date_idx on timelapse_videos (user_id, date desc);
+alter table timelapse_videos enable row level security;
+drop policy if exists "demo all access timelapse_videos" on timelapse_videos;
+create policy "demo all access timelapse_videos"
+  on timelapse_videos for all using (true) with check (true);
+
+
+-- 3-C) 기록 세션 제어 (웹 → Python 제어 신호)
 create table if not exists recording_sessions (
   user_id     text primary key,
   status      text not null default 'idle'  -- 'idle' | 'recording' | 'paused'
               check (status in ('idle','recording','paused')),
   started_at  timestamptz,
-  updated_at  timestamptz not null default now()
+  updated_at  timestamptz not null default now(),
+  settings    jsonb not null default '{"interval_sec":300,"motion_thr":25,"motion_cooldown":300}'::jsonb
 );
+-- 기존 테이블에 컬럼 추가 (이미 존재하는 경우)
+alter table recording_sessions
+  add column if not exists settings jsonb not null
+  default '{"interval_sec":300,"motion_thr":25,"motion_cooldown":300}'::jsonb;
 
 alter table recording_sessions enable row level security;
 drop policy if exists "demo all access recording_sessions" on recording_sessions;
