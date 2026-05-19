@@ -25,13 +25,21 @@ function fmt(seconds: number) {
   return [h, m, s].map((v) => v.toString().padStart(2, "0")).join(":");
 }
 
+type OptionsCopy = {
+  title: string; hint: string;
+  intervalLabel: string; intervalUnit: string; intervalHint: string;
+  motionThrLabel: string; motionThrHint: string;
+  motionCdLabel: string; motionCdUnit: string; motionCdHint: string;
+  saved: string;
+};
+
 const COPY: Record<Lang, {
   status: string; recording: string; idle: string; elapsed: string;
   streamLabel: string; analyzing: string; waiting: string; startHint: string;
   current: string; start: string; pause: string; reset: string;
   regular: string; motion: string;
   events: { hint: string; title: string; empty: string; waiting: string; reg: string; mot: string };
-  options: { title: string; hint: string; items: { label: string; value: string; hint: string }[] };
+  options: OptionsCopy;
 }> = {
   ko: {
     status: "상태", recording: "기록 중", idle: "대기", elapsed: "경과 시간",
@@ -50,11 +58,10 @@ const COPY: Record<Lang, {
     },
     options: {
       title: "기록 옵션", hint: "설정",
-      items: [
-        { label: "정기 촬영 간격", value: "60초", hint: "이 간격마다 RGB+뎁스 프레임이 저장됩니다" },
-        { label: "움직임 임계값", value: "30", hint: "픽셀 차이가 임계값을 넘으면 이벤트로 기록" },
-        { label: "자동 종료", value: "기상 시", hint: "움직임이 5분 이상 지속되면 종료 처리" },
-      ],
+      intervalLabel: "정기 촬영 간격", intervalUnit: "초", intervalHint: "이 간격마다 이미지 캡처 + 자세 분석",
+      motionThrLabel: "움직임 감지 임계값", motionThrHint: "픽셀 차이가 이 값을 넘으면 움직임으로 감지",
+      motionCdLabel: "움직임 기록 간격", motionCdUnit: "초", motionCdHint: "움직임 감지 후 다음 기록까지 최소 대기 시간",
+      saved: "저장됨",
     },
   },
   en: {
@@ -74,11 +81,10 @@ const COPY: Record<Lang, {
     },
     options: {
       title: "Recording options", hint: "Settings",
-      items: [
-        { label: "Sample interval", value: "60s", hint: "An RGB + depth frame is saved at this interval" },
-        { label: "Motion threshold", value: "30", hint: "Pixel diff over the threshold counts as motion" },
-        { label: "Auto stop", value: "On wake", hint: "Stops if movement persists for 5+ minutes" },
-      ],
+      intervalLabel: "Capture interval", intervalUnit: "s", intervalHint: "Image captured + analyzed at this interval",
+      motionThrLabel: "Motion threshold", motionThrHint: "Pixel diff above this value triggers a motion event",
+      motionCdLabel: "Motion cooldown", motionCdUnit: "s", motionCdHint: "Minimum wait between consecutive motion captures",
+      saved: "Saved",
     },
   },
 };
@@ -98,6 +104,39 @@ export function RecordController({ userId }: { userId: string }) {
   const [motionCount, setMotion]   = useState(0);
   const [events, setEvents]        = useState<{ time: string; kind: CaptureType; posture: Posture }[]>([]);
   const lastSeenRef = useRef<number>(0);
+
+  // 캡처 설정
+  const [intervalSec,    setIntervalSec]    = useState(300);
+  const [motionThr,      setMotionThr]      = useState(25);
+  const [motionCooldown, setMotionCooldown] = useState(300);
+  const [settingSaved,   setSettingSaved]   = useState(false);
+
+  // 마운트 시 저장된 설정 로드
+  useEffect(() => {
+    const sb = createClient();
+    sb.from("recording_sessions")
+      .select("settings")
+      .eq("user_id", userId)
+      .limit(1)
+      .then(({ data }) => {
+        const s = data?.[0]?.settings;
+        if (s) {
+          if (s.interval_sec    != null) setIntervalSec(s.interval_sec);
+          if (s.motion_thr      != null) setMotionThr(s.motion_thr);
+          if (s.motion_cooldown != null) setMotionCooldown(s.motion_cooldown);
+        }
+      });
+  }, [userId]);
+
+  async function saveSettings() {
+    const sb = createClient();
+    await sb.from("recording_sessions").upsert(
+      { user_id: userId, settings: { interval_sec: intervalSec, motion_thr: motionThr, motion_cooldown: motionCooldown }, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" }
+    );
+    setSettingSaved(true);
+    setTimeout(() => setSettingSaved(false), 2000);
+  }
 
   useEffect(() => {
     if (!recording || startTs === null) return;
@@ -303,15 +342,59 @@ export function RecordController({ userId }: { userId: string }) {
       </Card>
 
       <Card className="lg:col-span-3">
-        <CardTitle hint={t.options.hint}>{t.options.title}</CardTitle>
+        <div className="flex items-center justify-between mb-5">
+          <CardTitle hint={t.options.hint} className="mb-0">{t.options.title}</CardTitle>
+          <button
+            onClick={saveSettings}
+            className="text-xs px-3 py-1.5 rounded-full bg-primary/20 text-primary-3 border border-primary/30 hover:bg-primary/30 transition-colors font-medium"
+          >
+            {settingSaved ? `✓ ${t.options.saved}` : t.options.hint}
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {t.options.items.map((row) => (
-            <div key={row.label} className="rounded-2xl bg-white/[0.04] border border-white/[0.08] p-4 backdrop-blur">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{row.label}</div>
-              <div className="text-xl font-semibold mt-1.5 text-foreground">{row.value}</div>
-              <div className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">{row.hint}</div>
+          {/* 정기 촬영 간격 */}
+          <div className="rounded-2xl bg-white/[0.04] border border-white/[0.08] p-4 backdrop-blur">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">{t.options.intervalLabel}</div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={60} max={3600} step={60}
+                value={intervalSec}
+                onChange={(e) => setIntervalSec(Number(e.target.value))}
+                className="w-24 bg-white/[0.06] border border-white/15 rounded-xl px-3 py-1.5 text-lg font-semibold tabular-nums text-foreground focus:outline-none focus:border-primary/50"
+              />
+              <span className="text-sm text-muted-foreground">{t.options.intervalUnit}</span>
             </div>
-          ))}
+            <div className="text-[11px] text-muted-foreground mt-2 leading-relaxed">{t.options.intervalHint}</div>
+          </div>
+
+          {/* 움직임 감지 임계값 */}
+          <div className="rounded-2xl bg-white/[0.04] border border-white/[0.08] p-4 backdrop-blur">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">{t.options.motionThrLabel}</div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={5} max={100} step={5}
+                value={motionThr}
+                onChange={(e) => setMotionThr(Number(e.target.value))}
+                className="w-24 bg-white/[0.06] border border-white/15 rounded-xl px-3 py-1.5 text-lg font-semibold tabular-nums text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-2 leading-relaxed">{t.options.motionThrHint}</div>
+          </div>
+
+          {/* 움직임 기록 간격 */}
+          <div className="rounded-2xl bg-white/[0.04] border border-white/[0.08] p-4 backdrop-blur">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">{t.options.motionCdLabel}</div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={60} max={3600} step={60}
+                value={motionCooldown}
+                onChange={(e) => setMotionCooldown(Number(e.target.value))}
+                className="w-24 bg-white/[0.06] border border-white/15 rounded-xl px-3 py-1.5 text-lg font-semibold tabular-nums text-foreground focus:outline-none focus:border-primary/50"
+              />
+              <span className="text-sm text-muted-foreground">{t.options.motionCdUnit}</span>
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-2 leading-relaxed">{t.options.motionCdHint}</div>
+          </div>
         </div>
       </Card>
     </div>

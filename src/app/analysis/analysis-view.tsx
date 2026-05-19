@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Film, Lightbulb } from "lucide-react";
+import { ArrowRight, Film, Lightbulb, Loader2, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { PostureLegend, PosturePie } from "@/components/posture-pie";
 import { PostureTimeline } from "@/components/posture-timeline";
@@ -19,6 +21,8 @@ type Props = {
   session: SleepSession;
   distribution: DistEntry[];
   total: number;
+  timelapseUrl: string | null;
+  timelapseSec: number | null;
 };
 
 const COPY: Record<Lang, {
@@ -121,9 +125,36 @@ export function AnalysisView({
   session,
   distribution,
   total,
+  timelapseUrl,
+  timelapseSec,
 }: Props) {
   const { lang } = useLang();
   const t = COPY[lang];
+  const router = useRouter();
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await fetch("/api/generate-timelapse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setGenError(data.error ?? "생성 실패");
+      } else {
+        router.refresh();
+      }
+    } catch {
+      setGenError("네트워크 오류");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   if (logs.length === 0) {
     return (
@@ -249,29 +280,68 @@ export function AnalysisView({
           <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground mb-3">
             <Film className="size-3.5" />
             {t.timelapse}
+            {timelapseSec && (
+              <span className="ml-auto text-primary-3 font-semibold">
+                {Math.round(timelapseSec)}s
+              </span>
+            )}
           </div>
-          <div className="relative aspect-video rounded-2xl border border-white/10 bg-gradient-to-br from-[#1a1645] to-[#0d0a2c] grid place-items-center text-center overflow-hidden">
-            <div
-              aria-hidden
-              className="absolute inset-0 opacity-40"
-              style={{
-                backgroundImage:
-                  "radial-gradient(circle at 30% 30%, rgba(139,92,246,0.4), transparent 55%), radial-gradient(circle at 75% 75%, rgba(247,212,136,0.18), transparent 55%)",
-              }}
-            />
-            <div className="relative">
-              <div className="size-12 mx-auto mb-2 rounded-2xl bg-white/5 border border-white/10 grid place-items-center">
-                <Film className="size-5 text-primary-3" />
-              </div>
-              <div className="text-sm text-foreground-soft font-medium">{t.timelapseTitle}</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                {t.timelapseHint}
-              </div>
-            </div>
+          <div className="relative aspect-video rounded-2xl border border-white/10 overflow-hidden bg-black">
+            {timelapseUrl ? (
+              <video
+                src={timelapseUrl}
+                controls
+                className="w-full h-full object-contain"
+                preload="metadata"
+              />
+            ) : (
+              <>
+                <div
+                  aria-hidden
+                  className="absolute inset-0 opacity-40 bg-gradient-to-br from-[#1a1645] to-[#0d0a2c]"
+                  style={{
+                    backgroundImage:
+                      "radial-gradient(circle at 30% 30%, rgba(139,92,246,0.4), transparent 55%), radial-gradient(circle at 75% 75%, rgba(247,212,136,0.18), transparent 55%)",
+                  }}
+                />
+                <div className="absolute inset-0 grid place-items-center text-center">
+                  <div>
+                    <div className="size-12 mx-auto mb-2 rounded-2xl bg-white/5 border border-white/10 grid place-items-center">
+                      <Film className="size-5 text-primary-3" />
+                    </div>
+                    <div className="text-sm text-foreground-soft font-medium">{t.timelapseTitle}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{t.timelapseHint}</div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-          <Button variant="secondary" size="sm" className="mt-4 w-full">
-            {t.timelapseDownload}
-          </Button>
+          {genError && (
+            <p className="mt-3 text-[11px] text-red-400 text-center">{genError}</p>
+          )}
+          <div className="mt-4 flex gap-2">
+            {timelapseUrl && (
+              <a href={timelapseUrl} download target="_blank" rel="noreferrer" className="flex-1">
+                <Button variant="secondary" size="sm" className="w-full">
+                  {t.timelapseDownload}
+                </Button>
+              </a>
+            )}
+            <Button
+              variant={timelapseUrl ? "ghost" : "primary"}
+              size="sm"
+              className={timelapseUrl ? "" : "w-full"}
+              onClick={handleGenerate}
+              disabled={generating}
+            >
+              {generating
+                ? <><Loader2 className="size-3.5 animate-spin" /> 생성 중…</>
+                : timelapseUrl
+                  ? <><RefreshCw className="size-3.5" /> 재생성</>
+                  : <><Film className="size-3.5" /> 타임랩스 생성</>
+              }
+            </Button>
+          </div>
         </Card>
 
         <Card variant="feature" className="overflow-hidden">

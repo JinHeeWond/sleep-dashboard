@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Read(//c/Users/qkrgj/Documents/26-1/���Ļ�/**)",
+      "PowerShell(ls \"c:\\\\Users\\\\qkrgj\\\\Documents\\\\26-1\\\\인컴상\\\\sleep-dashboard\" | Where-Object { -not $_.PSIsContainer } | Select-Object Name | Sort-Object Name)",
+      "Bash(grep -E \"\\\\.\\(json|config|ts|mjs|cjs|rc\\)$|^d.*\\\\.next\")",
+      "Bash(awk '{print $NF}')",
+      "PowerShell(python -m pip install tensorflow --quiet 2>&1)",
+      "Bash(python -c \"import tensorflow as tf; print\\('TF', tf.__version__\\)\")",
+      "PowerShell(python -c \"import tensorflow as tf; print\\('TF', tf.__version__\\)\")",
+      "Bash(python -u -W ignore test_model.py)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\qkrgj\\Documents\\26-1\\���Ļ�\\sleep-dashboard\\test"
+    ]
+  }
+}

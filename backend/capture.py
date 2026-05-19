@@ -1,96 +1,38 @@
 """
 SleepLab — 수면 캡처 서비스
 ============================
-웹 대시보드 버튼으로 Kinect를 제어하고,
-localhost:8765/stream 으로 라이브 영상을 스트리밍합니다.
-
-  기록 시작  →  촬영 시작 / 재개
-  일시 정지  →  촬영 멈춤 (Kinect 유지)
-  초기화     →  Kinect 종료 + 프로세스 종료
-
 실행:
     cd sleep-dashboard/backend
     python capture.py
 """
 
-import cv2
 import os
+import cv2
 import sys
 import time
-import threading
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")   # TF 노이즈 로그 억제
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.db import get_client, _user_id, insert_posture
-
-import google.generativeai as genai
-from PIL import Image as PILImage
+from utils.db import get_client, _user_id, insert_posture, fetch_capture_settings
+from classifier import PostureClassifier
+from camera_loop import CaptureSettings, run as run_loop
+import stream
 
 # ── 설정 ─────────────────────────────────────────────
-INTERVAL_SEC      = 60   # 정기 촬영 간격 (초)
-ANALYSIS_BATCH    = 5    # 정기 촬영 N장마다 자세 분석 (5장 = 5분)
-MOTION_CHECK      = 5    # 움직임 감지 체크 간격 (초)
-MOTION_THR        = 25   # 움직임 감지 임계값
-POLL_SEC          = 3    # 웹 상태 폴링 간격 (초)
-SHOW_PREVIEW      = False
-STREAM_PORT       = 8765
-TABLE_SESSIONS    = "recording_sessions"
-MOTION_COOLDOWN   = 30   # 움직임 캡처 최소 간격 (초) — API 과다 호출 방지
-DATASET_DIR       = str(Path(__file__).parent / "Dataset")
-
+STREAM_PORT    = 8765
+TABLE_SESSIONS = "recording_sessions"
 SAVE_DIR = Path(__file__).parent / "sleep_frames" / datetime.now().strftime("%Y%m%d")
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── 스트림 공유 버퍼 ─────────────────────────────────
-_latest_frame = None
-_frame_lock   = threading.Lock()
+MAX_RETRIES  = 5   # 크래시 후 자동 재시작 최대 횟수
+RETRY_DELAY  = 5   # 첫 재시작 대기 (초, 이후 2배씩 증가)
 
-def set_frame(img):
-    global _latest_frame
-    with _frame_lock:
-        _latest_frame = img.copy()
-
-def get_frame():
-    with _frame_lock:
-        return _latest_frame.copy() if _latest_frame is not None else None
-
-
-# ── MJPEG 스트림 서버 (Flask) ────────────────────────
-from flask import Flask, Response
-
-_app = Flask(__name__)
-
-@_app.after_request
-def add_cors(resp):
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    return resp
-
-def _gen():
-    while True:
-        frame = get_frame()
-        if frame is None:
-            time.sleep(0.05)
-            continue
-        frame_small = cv2.resize(frame, (1280, 720))
-        _, buf = cv2.imencode(".jpg", frame_small, [cv2.IMWRITE_JPEG_QUALITY, 75])
-        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
-               + buf.tobytes() + b"\r\n")
-        time.sleep(0.05)  # ~20fps
-
-@_app.route("/stream")
-def stream():
-    return Response(_gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
-
-def _start_stream_server():
-    import logging
-    log = logging.getLogger("werkzeug")
-    log.setLevel(logging.ERROR)
-    _app.run(host="0.0.0.0", port=STREAM_PORT, threaded=True, use_reloader=False)
-
-
-# ── Kinect 감지 ──────────────────────────────────────
+# Kinect 감지
 try:
     import pykinect_azure as pykinect
     KINECT_AVAILABLE = True
@@ -100,7 +42,8 @@ except ImportError:
     print("[웹캠 모드] Kinect 없음 → 웹캠으로 대체")
 
 
-# ── 웹 상태 조회 ─────────────────────────────────────
+# ── Supabase 연동 ─────────────────────────────────────
+
 _last_status = "idle"
 
 def get_status() -> str:
@@ -112,273 +55,121 @@ def get_status() -> str:
              .eq("user_id", _user_id())
              .limit(1)
              .execute())
-        new_status = r.data[0]["status"] if r.data else _last_status
-        if new_status != _last_status:
-            print(f"\n[상태 변경] {_last_status} → {new_status}")
-        _last_status = new_status
-        return _last_status
+        new = r.data[0]["status"] if r.data else _last_status
+        if new != _last_status:
+            print(f"\n[상태] {_last_status} → {new}")
+        _last_status = new
     except Exception as e:
-        print(f"\n  [상태 조회 실패] {e} — 이전 상태({_last_status}) 유지")
-        return _last_status  # 오류 시 마지막 상태 유지 (idle로 잘못 종료 방지)
+        print(f"\n  [상태 조회 실패] {e}")
+    return _last_status
 
 
-# ── 공통 유틸 ────────────────────────────────────────
-def depth_colormap(img):
-    norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype("uint8")
-    return cv2.applyColorMap(norm, cv2.COLORMAP_JET)
-
-
-# ── Gemini 자세 분류 ─────────────────────────────────
-VALID_POSTURES = {"Supine", "Lateral_L", "Lateral_R", "Prone", "Unknown"}
-POSTURE_MAPPING = {
-    "supine": "Supine",
-    "Left":   "Lateral_L",
-    "Right":  "Lateral_R",
-    "prone":  "Prone",
-}
-
-def _build_few_shot() -> list:
-    """Dataset 폴더에서 few-shot 예시 로드 (시작 시 1회)"""
-    examples = []
-    for folder, label in POSTURE_MAPPING.items():
-        folder_path = os.path.join(DATASET_DIR, folder)
-        if not os.path.isdir(folder_path):
-            continue
-        files = [f for f in os.listdir(folder_path)
-                 if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-        if files:
-            img = PILImage.open(os.path.join(folder_path, files[0]))
-            examples.extend([img, f"이 자세의 정답 라벨은 {label}입니다."])
-    return examples
-
-def _init_gemini():
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        print("[Gemini] ⚠️  GEMINI_API_KEY 없음 → 자세 분류 비활성화")
-        return None, []
-    genai.configure(api_key=api_key)
-    model      = genai.GenerativeModel("gemini-2.5-flash")
-    few_shot   = _build_few_shot()
-    loaded_cnt = len([x for x in few_shot if not isinstance(x, str)])
-    print(f"[Gemini] ✅ 초기화 완료 — few-shot 예시 {loaded_cnt}장 로드")
-    return model, few_shot
-
-_gemini_model, _few_shot = _init_gemini()
-
-def classify_posture(image_paths: list[str]) -> str:
-    """
-    N장의 이미지(로컬 경로)를 받아 Gemini로 자세 분류.
-    반환값: 'Supine' | 'Lateral_L' | 'Lateral_R' | 'Prone' | 'Unknown'
-    """
-    if _gemini_model is None:
-        return "Unknown"
+def reset_session() -> None:
+    """시작 시 세션을 idle로 초기화 — 웹 버튼을 눌러야만 촬영 시작."""
     try:
-        # 대표 이미지: 마지막 장 사용
-        target = PILImage.open(image_paths[-1])
-        contents = [
-            "당신은 수면 자세 분류 전문가입니다. 아래 예시를 참고해 마지막 이미지의 자세를 "
-            "Supine, Lateral_L, Lateral_R, Prone, Unknown 중 하나로만 답하세요. "
-            "다른 말은 일절 하지 마세요."
-        ] + _few_shot + ["이제 이 이미지의 자세를 분류하세요:", target]
-
-        response = _gemini_model.generate_content(contents)
-        text = response.text.strip()
-
-        # 응답에서 유효한 라벨 추출
-        for label in VALID_POSTURES:
-            if label in text:
-                return label
-        return "Unknown"
-
+        get_client().table(TABLE_SESSIONS).upsert(
+            {"user_id": _user_id(), "status": "idle",
+             "updated_at": datetime.now().isoformat()},
+            on_conflict="user_id",
+        ).execute()
+        print("[세션] idle 초기화 완료 — 웹에서 '기록 시작'을 눌러주세요")
     except Exception as e:
-        print(f"\n[Gemini] 분류 실패: {e}")
-        return "Unknown"
+        print(f"[세션] 초기화 실패: {e}")
 
 
-def upload(ts: int, color_path: str, kind: str, posture: str = "Unknown"):
+def upload(ts: int, image_path: str, kind: str, posture: str) -> None:
     try:
         insert_posture(
             timestamp=ts, posture=posture, angle=0,
-            capture_type=kind, image_path=color_path, upload=True,
+            capture_type=kind, image_path=image_path, upload=True,
         )
-        print(f"  ✅ {kind} 업로드 완료 (자세: {posture})")
+        print(f"  ✅ {kind} 업로드 (자세: {posture})")
     except Exception as e:
         print(f"  ❌ 업로드 실패: {e}")
 
 
-# ── Kinect 캡처 루프 ─────────────────────────────────
-def run_kinect():
-    pykinect.initialize_libraries()
-    cfg = pykinect.default_configuration
-    cfg.color_resolution = pykinect.K4A_COLOR_RESOLUTION_1080P
-    cfg.depth_mode       = pykinect.K4A_DEPTH_MODE_NFOV_UNBINNED
-    device = pykinect.start_device(config=cfg)
-    print("[Kinect] 연결 완료 — 웹에서 '기록 시작'을 눌러주세요\n")
-
-    last_regular      = 0
-    last_motion       = 0
-    last_motion_upload = 0          # 모션 업로드 쿨다운용
-    prev_small        = None
-    has_recorded      = False
-    batch_paths: list[str] = []
-
+def _load_settings() -> CaptureSettings:
+    defaults = CaptureSettings()
     try:
-        while True:
-            # 항상 프레임을 읽어 스트림 유지
-            capture           = device.update()
-            ok_c, color_image = capture.get_color_image()
-            ok_d, depth_image = capture.get_depth_image()
+        s = fetch_capture_settings()
+        cfg = CaptureSettings(
+            interval_sec    = 10, # int(s.get("interval_sec",    defaults.interval_sec)),
+            motion_thr      = 12, # int(s.get("motion_thr",      defaults.motion_thr)),
+            motion_cooldown = 10, # int(s.get("motion_cooldown", defaults.motion_cooldown)),
+        )
+        print(f"[설정] 촬영간격={cfg.interval_sec}s  움직임임계={cfg.motion_thr}  움직임간격={cfg.motion_cooldown}s")
+        return cfg
+    except Exception as e:
+        print(f"[설정] 로드 실패, 기본값 사용: {e}")
+        return defaults
 
-            if ok_c:
-                set_frame(color_image)  # 스트림 버퍼 업데이트
 
-            status = get_status()
+# ── 프레임 소스 제너레이터 ───────────────────────────
 
-            # idle: 한 번이라도 recording 된 이후에만 종료
-            if status == "idle":
-                if has_recorded:
-                    print("\n[초기화] Kinect 종료합니다.")
-                    break
-                else:
-                    print(f"\r[{datetime.now().strftime('%H:%M:%S')}] 대기 중… (웹에서 '기록 시작'을 눌러주세요)", end="", flush=True)
-                    time.sleep(POLL_SEC)
-                    continue
+def _kinect_frames(device):
+    """Kinect → (color, depth) 제너레이터."""
+    while True:
+        capture           = device.update()
+        ok_c, color_image = capture.get_color_image()
+        ok_d, depth_image = capture.get_depth_image()
+        yield (color_image if ok_c else None,
+               depth_image if ok_d else None)
 
-            if status == "paused":
-                print(f"\r[{datetime.now().strftime('%H:%M:%S')}] 일시 정지 중…", end="", flush=True)
-                time.sleep(POLL_SEC)
-                continue
 
-            has_recorded = True  # recording 상태 최초 진입
+def _webcam_frames(cap):
+    """웹캠 → (color, None) 제너레이터."""
+    while True:
+        ret, frame = cap.read()
+        yield (frame if ret else None, None)
 
-            if not ok_c or not ok_d:
-                time.sleep(0.1)
-                continue
 
-            now = time.time()
-            ts  = int(now)
+# ── 실행 함수 ─────────────────────────────────────────
 
-            # 정기 촬영
-            # ── 정기 촬영 (60초마다) ──────────────────
-            if now - last_regular >= INTERVAL_SEC:
-                color_path = str(SAVE_DIR / f"{ts}_regular_color.png")
-                cv2.imwrite(color_path, color_image)
-                cv2.imwrite(str(SAVE_DIR / f"{ts}_regular_depth.png"), depth_colormap(depth_image))
-                last_regular = now
-                batch_paths.append(color_path)
-                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 정기 촬영 ({len(batch_paths)}/{ANALYSIS_BATCH}장)")
-
-                # 5장마다 자세 분석 후 업로드
-                if len(batch_paths) >= ANALYSIS_BATCH:
-                    posture = classify_posture(batch_paths)
-                    print(f"  → 자세 분석 완료: {posture}")
-                    upload(ts, color_path, "regular", posture)
-                    batch_paths = []
-
-            # ── 움직임 감지 (5초마다) ────────────────
-            if now - last_motion >= MOTION_CHECK:
-                small = cv2.resize(cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY), (160, 90))
-                if prev_small is not None:
-                    score = float(cv2.absdiff(small, prev_small).mean())
-                    print(f"\r  움직임 점수: {score:.1f} (임계값: {MOTION_THR})", end="", flush=True)
-                    if score > MOTION_THR and (now - last_motion_upload) >= MOTION_COOLDOWN:
-                        color_path = str(SAVE_DIR / f"{ts}_motion_color.png")
-                        cv2.imwrite(color_path, color_image)
-                        posture = classify_posture([color_path])
-                        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 움직임 감지 (점수: {score:.1f})")
-                        upload(ts, color_path, "motion", posture)
-                        last_motion_upload = now
-                prev_small  = small
-                last_motion = now
-
-            time.sleep(0.3)
-
+def run_kinect(classifier: PostureClassifier, cfg: CaptureSettings) -> None:
+    pykinect.initialize_libraries()
+    device_cfg = pykinect.default_configuration
+    device_cfg.color_resolution = pykinect.K4A_COLOR_RESOLUTION_1080P
+    device_cfg.depth_mode       = pykinect.K4A_DEPTH_MODE_NFOV_UNBINNED
+    device = pykinect.start_device(config=device_cfg)
+    print("[Kinect] 연결 완료 — 웹에서 '기록 시작'을 눌러주세요\n")
+    try:
+        run_loop(
+            frame_source = _kinect_frames(device),
+            get_status   = get_status,
+            set_stream   = stream.set_frame,
+            classify     = classifier.classify,
+            upload       = upload,
+            save_dir     = SAVE_DIR,
+            cfg          = cfg,
+            use_depth    = True,
+        )
     finally:
         device.close()
-        print("[Kinect] 장치 종료 완료")
+        print("[Kinect] 장치 종료")
 
 
-# ── 웹캠 캡처 루프 ───────────────────────────────────
-def run_webcam():
+def run_webcam(classifier: PostureClassifier, cfg: CaptureSettings) -> None:
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("[오류] 웹캠 연결 실패")
-        return
-
+        raise RuntimeError("웹캠 연결 실패")
     print("[웹캠] 연결 완료 — 웹에서 '기록 시작'을 눌러주세요\n")
-    last_regular       = 0
-    last_motion        = 0
-    last_motion_upload = 0
-    prev_small         = None
-    has_recorded       = False
-    batch_paths: list[str] = []
-
     try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            set_frame(frame)
-
-            status = get_status()
-
-            if status == "idle":
-                if has_recorded:
-                    print("\n[초기화] 웹캠 종료합니다.")
-                    break
-                else:
-                    print(f"\r[{datetime.now().strftime('%H:%M:%S')}] 대기 중… (웹에서 '기록 시작'을 눌러주세요)", end="", flush=True)
-                    time.sleep(POLL_SEC)
-                    continue
-
-            if status == "paused":
-                print(f"\r[{datetime.now().strftime('%H:%M:%S')}] 일시 정지 중…", end="", flush=True)
-                time.sleep(POLL_SEC)
-                continue
-
-            has_recorded = True
-            now = time.time()
-            ts  = int(now)
-
-            # ── 정기 촬영 (60초마다) ──────────────────
-            if now - last_regular >= INTERVAL_SEC:
-                color_path = str(SAVE_DIR / f"{ts}_regular_color.png")
-                cv2.imwrite(color_path, frame)
-                cv2.imwrite(str(SAVE_DIR / f"{ts}_regular_depth.png"),
-                            cv2.applyColorMap(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.COLORMAP_JET))
-                last_regular = now
-                batch_paths.append(color_path)
-                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 정기 촬영 ({len(batch_paths)}/{ANALYSIS_BATCH}장)")
-
-                if len(batch_paths) >= ANALYSIS_BATCH:
-                    posture = classify_posture(batch_paths)
-                    print(f"  → 자세 분석 완료: {posture}")
-                    upload(ts, color_path, "regular", posture)
-                    batch_paths = []
-
-            # ── 움직임 감지 (5초마다) ────────────────
-            if now - last_motion >= MOTION_CHECK:
-                small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (160, 90))
-                if prev_small is not None:
-                    score = float(cv2.absdiff(small, prev_small).mean())
-                    print(f"\r  움직임 점수: {score:.1f} (임계값: {MOTION_THR})", end="", flush=True)
-                    if score > MOTION_THR and (now - last_motion_upload) >= MOTION_COOLDOWN:
-                        color_path = str(SAVE_DIR / f"{ts}_motion_color.png")
-                        cv2.imwrite(color_path, frame)
-                        posture = classify_posture([color_path])
-                        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 움직임 감지 (점수: {score:.1f})")
-                        upload(ts, color_path, "motion", posture)
-                        last_motion_upload = now
-                prev_small  = small
-                last_motion = now
-
-            time.sleep(0.1)
-
+        run_loop(
+            frame_source = _webcam_frames(cap),
+            get_status   = get_status,
+            set_stream   = stream.set_frame,
+            classify     = classifier.classify,
+            upload       = upload,
+            save_dir     = SAVE_DIR,
+            cfg          = cfg,
+            use_depth    = False,
+        )
     finally:
         cap.release()
-        print("[웹캠] 장치 종료 완료")
+        print("[웹캠] 장치 종료")
 
+
+# ── 메인 ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("=" * 50)
@@ -387,14 +178,26 @@ if __name__ == "__main__":
     print(f" 저장 폴더: {SAVE_DIR}")
     print("=" * 50 + "\n")
 
-    # 스트림 서버를 백그라운드 스레드로 실행
-    t = threading.Thread(target=_start_stream_server, daemon=True)
-    t.start()
-    print(f"[Stream] http://localhost:{STREAM_PORT}/stream 시작됨\n")
+    stream.start(STREAM_PORT)
+    classifier = PostureClassifier()
+    cfg        = _load_settings()
+    reset_session()
 
-    if KINECT_AVAILABLE:
-        run_kinect()
-    else:
-        run_webcam()
+    delay = RETRY_DELAY
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            if KINECT_AVAILABLE:
+                run_kinect(classifier, cfg)
+            else:
+                run_webcam(classifier, cfg)
+            break  # 정상 종료
+        except Exception as e:
+            if attempt == MAX_RETRIES:
+                print(f"\n[오류] 최대 재시작 횟수 초과 — 종료합니다.")
+                sys.exit(1)
+            print(f"\n[오류] {e}")
+            print(f"  → {delay}초 후 재시작 ({attempt}/{MAX_RETRIES})")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
 
-    print("\n프로세스 종료. 다시 사용하려면 capture.py를 재실행하세요.")
+    print("\n서비스 종료.")
