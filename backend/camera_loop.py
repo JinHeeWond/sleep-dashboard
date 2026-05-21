@@ -115,7 +115,7 @@ def run(
             if len(batch_paths) >= cfg.analysis_batch:
                 posture = classify(batch_paths[-1])
                 print(f"  → {posture}")
-                upload(ts, analysis_path, "regular", posture)
+                upload(ts, color_path, "regular", posture)
                 batch_paths.clear()
 
         # ── 움직임 감지 후 안정 대기 캡처 ──────────
@@ -130,7 +130,7 @@ def run(
 
             posture = classify(analysis_path)
             print(f"\n[{_ts()}] 움직임 후 자세 분석: {posture}")
-            upload(ts, analysis_path, "motion", posture)
+            upload(ts, color_path, "motion", posture)
             last_motion_upload = now
             motion_settle_due  = None
 
