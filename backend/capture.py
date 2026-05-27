@@ -93,9 +93,9 @@ def _load_settings() -> CaptureSettings:
     try:
         s = fetch_capture_settings()
         cfg = CaptureSettings(
-            interval_sec    = 10, # int(s.get("interval_sec",    defaults.interval_sec)),
-            motion_thr      = 12, # int(s.get("motion_thr",      defaults.motion_thr)),
-            motion_cooldown = 10, # int(s.get("motion_cooldown", defaults.motion_cooldown)),
+            interval_sec    =  int(s.get("interval_sec",    defaults.interval_sec)),
+            motion_thr      =  int(s.get("motion_thr",      defaults.motion_thr)),
+            motion_cooldown =  int(s.get("motion_cooldown", defaults.motion_cooldown)),
         )
         print(f"[설정] 촬영간격={cfg.interval_sec}s  움직임임계={cfg.motion_thr}  움직임간격={cfg.motion_cooldown}s")
         return cfg
@@ -142,6 +142,7 @@ def run_kinect(classifier: PostureClassifier, cfg: CaptureSettings) -> None:
             save_dir     = SAVE_DIR,
             cfg          = cfg,
             use_depth    = True,
+            reload_cfg   = _load_settings,
         )
     finally:
         device.close()
@@ -163,6 +164,7 @@ def run_webcam(classifier: PostureClassifier, cfg: CaptureSettings) -> None:
             save_dir     = SAVE_DIR,
             cfg          = cfg,
             use_depth    = False,
+            reload_cfg   = _load_settings,
         )
     finally:
         cap.release()

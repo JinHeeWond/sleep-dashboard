@@ -67,11 +67,11 @@ export function Stat({
   hint?: string;
 }) {
   return (
-    <div>
+    <div className="text-center">
       <div className="text-[11px] font-medium tracking-wider uppercase text-muted-foreground">
         {label}
       </div>
-      <div className="mt-1.5 flex items-baseline gap-1">
+      <div className="mt-1.5 flex items-baseline justify-center gap-1">
         <span className="text-[28px] font-semibold tracking-tight tabular-nums gradient-text">
           {value}
         </span>

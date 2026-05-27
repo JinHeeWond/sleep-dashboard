@@ -49,6 +49,9 @@ def _ts() -> str:
 
 # ── 공통 루프 ──────────────────────────────────────────
 
+SETTINGS_RELOAD_INTERVAL = 60  # 설정 재읽기 주기 (초)
+
+
 def run(
     frame_source: Generator[Tuple[Any, Any], None, None],
     get_status:   Callable[[], str],
@@ -58,12 +61,15 @@ def run(
     save_dir:     Path,
     cfg:          CaptureSettings,
     use_depth:    bool = False,
+    reload_cfg:   Callable[[], CaptureSettings] | None = None,
 ) -> None:
     """
     frame_source: (color, depth) 튜플을 yield하는 제너레이터
     use_depth:    True면 depth colormap 이미지로 분류 (Kinect 전용)
+    reload_cfg:   설정을 DB에서 다시 읽어 반환하는 콜백 (없으면 갱신 안 함)
     """
     last_regular       = 0.0
+    last_reload        = 0.0
     last_motion        = 0.0
     last_motion_upload = 0.0
     motion_settle_due  = None
@@ -74,6 +80,19 @@ def run(
     for color, depth in frame_source:
         if color is not None:
             set_stream(color)
+
+        # 주기적으로 웹 설정 재읽기
+        _now = time.time()
+        if reload_cfg is not None and _now - last_reload >= SETTINGS_RELOAD_INTERVAL:
+            new = reload_cfg()
+            if (new.interval_sec    != cfg.interval_sec or
+                new.motion_thr      != cfg.motion_thr   or
+                new.motion_cooldown != cfg.motion_cooldown):
+                cfg.interval_sec    = new.interval_sec
+                cfg.motion_thr      = new.motion_thr
+                cfg.motion_cooldown = new.motion_cooldown
+                print(f"\n[설정 갱신] 촬영간격={cfg.interval_sec}s  임계={cfg.motion_thr}  움직임간격={cfg.motion_cooldown}s")
+            last_reload = _now
 
         status = get_status()
 
